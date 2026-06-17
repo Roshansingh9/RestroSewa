@@ -1,0 +1,392 @@
+"use server";
+
+import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+
+export type ActionResult = { error: string } | null;
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export type TableStatus = {
+  id: string;
+  number: string;
+  group_id: string | null;
+  session_id: string | null;
+  session_opened_at: string | null;
+};
+
+export type OrderItemRow = {
+  id: string;
+  item_name: string;
+  item_price: number;
+  workstation_name: string | null;
+  quantity: number;
+  item_status: "pending" | "ready" | "served";
+  notes: string | null;
+  created_at: string;
+  order_id: string;
+};
+
+export type SessionDetail = {
+  id: string;
+  type: string;
+  status: string;
+  table_number: string | null;
+  opened_at: string;
+  items: OrderItemRow[];
+  total: number;
+};
+
+export type QueueItem = OrderItemRow & {
+  table_number: string | null;
+  session_type: string | null;
+};
+
+export type CartItem = {
+  menu_item_id: string;
+  variant_id: string | null;
+  item_name: string;
+  item_price: number;
+  workstation_id: string;
+  workstation_name: string;
+  quantity: number;
+  notes: string | null;
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+async function getRestaurantUser() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const service = createServiceClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: ru } = await (service as any)
+    .from("restaurant_users")
+    .select("id, restaurant_id")
+    .eq("auth_user_id", user.id)
+    .single();
+
+  if (!ru) redirect("/login");
+  return ru as { id: string; restaurant_id: string };
+}
+
+// ─── Table Status Overview ────────────────────────────────────────────────────
+
+export async function getTableStatusOverview(
+  restaurantId: string
+): Promise<TableStatus[]> {
+  const service = createServiceClient();
+
+  const [tablesRes, sessionsRes] = await Promise.all([
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (service as any)
+      .from("restaurant_tables")
+      .select("id, number, group_id")
+      .eq("restaurant_id", restaurantId)
+      .eq("is_active", true)
+      .order("number"),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (service as any)
+      .from("sessions")
+      .select("id, table_id, opened_at")
+      .eq("restaurant_id", restaurantId)
+      .eq("status", "active"),
+  ]);
+
+  const tables = (tablesRes.data ?? []) as {
+    id: string;
+    number: string;
+    group_id: string | null;
+  }[];
+  const sessions = (sessionsRes.data ?? []) as {
+    id: string;
+    table_id: string;
+    opened_at: string;
+  }[];
+
+  return tables.map((t) => {
+    const session = sessions.find((s) => s.table_id === t.id) ?? null;
+    return {
+      id: t.id,
+      number: t.number,
+      group_id: t.group_id,
+      session_id: session?.id ?? null,
+      session_opened_at: session?.opened_at ?? null,
+    };
+  });
+}
+
+// ─── Open / Navigate to Session ──────────────────────────────────────────────
+
+export async function openTableSession(tableId: string) {
+  const ru = await getRestaurantUser();
+  const service = createServiceClient();
+
+  // Check for existing active session on this table
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: existing } = await (service as any)
+    .from("sessions")
+    .select("id")
+    .eq("restaurant_id", ru.restaurant_id)
+    .eq("table_id", tableId)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (existing) {
+    redirect(`/employee/session/${existing.id}`);
+  }
+
+  // Create new session
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: session, error } = await (service as any)
+    .from("sessions")
+    .insert({
+      restaurant_id: ru.restaurant_id,
+      type: "table",
+      table_id: tableId,
+    })
+    .select("id")
+    .single();
+
+  if (error) return { error: error.message };
+  redirect(`/employee/session/${session.id}`);
+}
+
+export async function openWalkInSession() {
+  const ru = await getRestaurantUser();
+  const service = createServiceClient();
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: session, error } = await (service as any)
+    .from("sessions")
+    .insert({
+      restaurant_id: ru.restaurant_id,
+      type: "walk_in",
+    })
+    .select("id")
+    .single();
+
+  if (error) redirect("/employee/dashboard");
+  redirect(`/employee/session/${session.id}`);
+}
+
+// ─── Session Detail ───────────────────────────────────────────────────────────
+
+export async function getSessionDetail(
+  sessionId: string
+): Promise<SessionDetail | null> {
+  const service = createServiceClient();
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: session } = await (service as any)
+    .from("sessions")
+    .select(`id, type, status, opened_at, table_id, restaurant_tables ( number )`)
+    .eq("id", sessionId)
+    .maybeSingle();
+
+  if (!session) return null;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: orders } = await (service as any)
+    .from("session_orders")
+    .select("id")
+    .eq("session_id", sessionId);
+
+  const orderIds = ((orders ?? []) as { id: string }[]).map((o) => o.id);
+  let items: OrderItemRow[] = [];
+
+  if (orderIds.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: itemsData } = await (service as any)
+      .from("session_order_items")
+      .select(
+        "id, item_name, item_price, workstation_name, quantity, item_status, notes, created_at, order_id"
+      )
+      .in("order_id", orderIds)
+      .order("created_at");
+    items = (itemsData as OrderItemRow[]) ?? [];
+  }
+
+  const total = items.reduce(
+    (sum, i) => sum + Number(i.item_price) * i.quantity,
+    0
+  );
+
+  return {
+    id: session.id,
+    type: session.type,
+    status: session.status,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    table_number: (session as any).restaurant_tables?.number ?? null,
+    opened_at: session.opened_at,
+    items,
+    total,
+  };
+}
+
+// ─── Submit Order ─────────────────────────────────────────────────────────────
+
+export async function submitOrder(
+  _prevState: ActionResult,
+  formData: FormData
+): Promise<ActionResult> {
+  const ru = await getRestaurantUser();
+  const service = createServiceClient();
+
+  const sessionId = formData.get("session_id") as string;
+  const itemsJson = formData.get("items") as string;
+
+  let cartItems: CartItem[];
+  try {
+    cartItems = JSON.parse(itemsJson);
+  } catch {
+    return { error: "Invalid order data." };
+  }
+
+  if (!cartItems?.length) return { error: "No items selected." };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: order, error: orderErr } = await (service as any)
+    .from("session_orders")
+    .insert({
+      session_id: sessionId,
+      restaurant_id: ru.restaurant_id,
+      created_by: ru.id,
+    })
+    .select("id")
+    .single();
+
+  if (orderErr) return { error: "Failed to create order." };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: itemsErr } = await (service as any)
+    .from("session_order_items")
+    .insert(
+      cartItems.map((item) => ({
+        order_id: order.id,
+        menu_item_id: item.menu_item_id,
+        variant_id: item.variant_id,
+        workstation_id: item.workstation_id,
+        item_name: item.item_name,
+        item_price: item.item_price,
+        workstation_name: item.workstation_name,
+        quantity: item.quantity,
+        notes: item.notes,
+      }))
+    );
+
+  if (itemsErr) return { error: "Failed to add items." };
+
+  redirect(`/employee/session/${sessionId}`);
+}
+
+// ─── Update Item Status ───────────────────────────────────────────────────────
+
+export async function updateOrderItemStatus(
+  itemId: string,
+  status: "pending" | "ready" | "served"
+) {
+  const service = createServiceClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (service as any)
+    .from("session_order_items")
+    .update({ item_status: status })
+    .eq("id", itemId);
+  revalidatePath("/employee/queue");
+}
+
+// ─── Close Session with Payment ───────────────────────────────────────────────
+
+export async function closeSessionWithPayment(
+  _prevState: ActionResult,
+  formData: FormData
+): Promise<ActionResult> {
+  const ru = await getRestaurantUser();
+  const service = createServiceClient();
+
+  const sessionId = formData.get("session_id") as string;
+  const amount = parseFloat(formData.get("amount") as string);
+  const method = formData.get("payment_method") as string;
+
+  if (isNaN(amount) || amount < 0) return { error: "Invalid amount." };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (service as any).from("payments").insert({
+    restaurant_id: ru.restaurant_id,
+    session_id: sessionId,
+    amount,
+    payment_method: method || "cash",
+    created_by: ru.id,
+  });
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (service as any)
+    .from("sessions")
+    .update({ status: "closed", closed_at: new Date().toISOString() })
+    .eq("id", sessionId);
+
+  redirect("/employee/dashboard");
+}
+
+// ─── Workstation Queue ────────────────────────────────────────────────────────
+
+export async function getWorkstationQueue(
+  restaurantId: string
+): Promise<QueueItem[]> {
+  const service = createServiceClient();
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: items } = await (service as any)
+    .from("session_order_items")
+    .select(
+      "id, item_name, item_price, workstation_name, quantity, item_status, notes, created_at, order_id"
+    )
+    .eq("restaurant_id", restaurantId)
+    .in("item_status", ["pending", "ready"])
+    .order("created_at");
+
+  if (!items?.length) return [];
+
+  // Fetch session info for table numbers
+  const orderIds = [...new Set((items as OrderItemRow[]).map((i) => i.order_id))];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: orders } = await (service as any)
+    .from("session_orders")
+    .select("id, session_id")
+    .in("id", orderIds);
+
+  const sessionIds = [...new Set(((orders ?? []) as { id: string; session_id: string }[]).map((o) => o.session_id))];
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: sessions } = await (service as any)
+    .from("sessions")
+    .select("id, type, table_id, restaurant_tables ( number )")
+    .in("id", sessionIds)
+    .eq("status", "active");
+
+  const orderMap = new Map(((orders ?? []) as { id: string; session_id: string }[]).map((o) => [o.id, o.session_id]));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sessionMap = new Map(((sessions ?? []) as any[]).map((s) => [s.id, s]));
+
+  return (items as OrderItemRow[])
+    .filter((item) => {
+      const sid = orderMap.get(item.order_id);
+      return sid && sessionMap.has(sid);
+    })
+    .map((item) => {
+      const sid = orderMap.get(item.order_id)!;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const session = sessionMap.get(sid) as any;
+      return {
+        ...item,
+        table_number: session?.restaurant_tables?.number ?? null,
+        session_type: session?.type ?? null,
+      };
+    });
+}

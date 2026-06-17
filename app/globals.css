@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+@theme inline {
+  /* ── Colors ──────────────────────────────────────────────── */
+  --color-primary:              #533afd;
+  --color-primary-deep:         #4434d4;
+  --color-primary-press:        #2e2b8c;
+  --color-primary-soft:         #665efd;
+  --color-primary-subdued:      #b9b9f9;
+  --color-brand-dark:           #1c1e54;
+
+  --color-ink:                  #0d253d;
+  --color-ink-secondary:        #273951;
+  --color-ink-mute:             #64748d;
+  --color-ink-mute-2:           #61718a;
+
+  --color-canvas:               #ffffff;
+  --color-canvas-soft:          #f6f9fc;
+  --color-canvas-cream:         #f5e9d4;
+
+  --color-hairline:             #e3e8ee;
+  --color-hairline-input:       #a8c3de;
+
+  --color-ruby:                 #ea2261;
+  --color-magenta:              #f96bee;
+  --color-lemon:                #9b6829;
+  --color-shadow-blue:          #003770;
+
+  /* ── Border Radius ───────────────────────────────────────── */
+  --radius-xs:                  4px;
+  --radius-sm:                  6px;
+  --radius-md:                  8px;
+  --radius-lg:                  12px;
+  --radius-xl:                  16px;
+  --radius-pill:                9999px;
+
+  /* ── shadcn token overrides ──────────────────────────────── */
+  --color-background:           #ffffff;
+  --color-foreground:           #0d253d;
+  --color-card:                 #ffffff;
+  --color-card-foreground:      #0d253d;
+  --color-popover:              #ffffff;
+  --color-popover-foreground:   #0d253d;
+  --color-secondary:            #f6f9fc;
+  --color-secondary-foreground: #0d253d;
+  --color-muted:                #f6f9fc;
+  --color-muted-foreground:     #64748d;
+  --color-accent:               #f6f9fc;
+  --color-accent-foreground:    #0d253d;
+  --color-destructive:          #ea2261;
+  --color-destructive-foreground: #ffffff;
+  --color-border:               #e3e8ee;
+  --color-input:                #a8c3de;
+  --color-ring:                 #533afd;
+  --radius:                     0.375rem;
+}
+
+/* ── Spacing reference (plain CSS vars, not Tailwind tokens) ─ */
+:root {
+  --ds-spacing-xxs: 2px;
+  --ds-spacing-xs:  4px;
+  --ds-spacing-sm:  8px;
+  --ds-spacing-md:  12px;
+  --ds-spacing-lg:  16px;
+  --ds-spacing-xl:  24px;
+  --ds-spacing-xxl: 32px;
+  --ds-spacing-huge: 64px;
+}
+
+/* ── Base ────────────────────────────────────────────────────── */
+body {
+  font-family: var(--font-inter, "Inter", "SF Pro Display", system-ui, -apple-system, sans-serif);
+  color: var(--color-ink);
+  background: var(--color-canvas);
+  font-weight: 300;
+  font-feature-settings: "ss01";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Typography utilities ────────────────────────────────────── */
+.tabular {
+  font-feature-settings: "tnum";
+  letter-spacing: -0.42px;
+}
