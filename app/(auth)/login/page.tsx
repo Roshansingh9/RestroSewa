@@ -46,9 +46,9 @@ export default async function LoginPage({
   }
 
   return (
-    <div className="w-full max-w-sm">
+    <div className="w-full max-w-[420px] mx-auto">
       {/* Logo / wordmark */}
-      <div className="mb-8 text-center">
+      <div className="mb-6 sm:mb-8 text-center">
         <span
           className="text-2xl tracking-tight"
           style={{ color: "var(--color-ink)", fontWeight: 300, letterSpacing: "-0.5px" }}
@@ -58,7 +58,7 @@ export default async function LoginPage({
       </div>
 
       <div
-        className="rounded-xl border px-8 py-8"
+        className="rounded-xl border px-5 py-6 sm:px-8 sm:py-8"
         style={{
           background: "var(--color-canvas)",
           borderColor: "var(--color-hairline)",
@@ -108,20 +108,12 @@ export default async function LoginPage({
       </div>
 
       {!isStaffMode && (
-        <div className="mt-6 flex flex-col gap-2 text-center">
-          <p className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>
-            Staff?{" "}
-            <span style={{ color: "rgba(255,255,255,0.5)" }}>
-              Use the PIN login link from your manager.
-            </span>
-          </p>
-          <p className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>
-            Super Admin?{" "}
-            <Link href="/superadmin/login" style={{ color: "rgba(255,255,255,0.55)" }}>
-              Sign in here
-            </Link>
-          </p>
-        </div>
+        <p className="text-xs text-center mt-5 sm:mt-6 px-2" style={{ color: "rgba(255,255,255,0.35)" }}>
+          Staff?{" "}
+          <span style={{ color: "rgba(255,255,255,0.5)" }}>
+            Use the PIN login link from your manager.
+          </span>
+        </p>
       )}
     </div>
   );

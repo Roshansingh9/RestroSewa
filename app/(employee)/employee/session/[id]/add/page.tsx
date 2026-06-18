@@ -1,6 +1,7 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { requireRestaurantStaff } from "@/lib/auth/guards";
+import { hasPermission, PERMISSIONS } from "@/lib/permissions";
 import { getMenuCategories, getMenuItemsByCategory } from "@/app/actions/menu";
 import { createServiceClient } from "@/lib/supabase/service";
 import type { MenuItemRow } from "@/app/actions/menu";
@@ -14,6 +15,10 @@ export default async function AddItemsPage({
 }) {
   const { id: sessionId } = await params;
   const { restaurantUser } = await requireRestaurantStaff();
+
+  if (!hasPermission(restaurantUser, PERMISSIONS.CREATE_ORDERS)) {
+    redirect(`/employee/session/${sessionId}`);
+  }
   const { restaurant_id } = restaurantUser;
 
   // Verify session belongs to this restaurant

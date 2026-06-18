@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { hasPermission, PERMISSIONS } from "@/lib/permissions";
 
 export type ActionResult = { error: string } | null;
 
@@ -57,7 +58,9 @@ export type CartItem = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function getRestaurantUser() {
+type RUContext = { id: string; restaurant_id: string; role: string; permissions: string[] };
+
+async function getRestaurantUser(): Promise<RUContext> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -68,12 +71,14 @@ async function getRestaurantUser() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: ru } = await (service as any)
     .from("restaurant_users")
-    .select("id, restaurant_id")
+    .select("id, restaurant_id, role, permissions")
     .eq("auth_user_id", user.id)
     .single();
 
   if (!ru) redirect("/login");
-  return ru as { id: string; restaurant_id: string };
+  const ctx = ru as RUContext;
+  if (!Array.isArray(ctx.permissions)) ctx.permissions = [];
+  return ctx;
 }
 
 // ─── Table Status Overview ────────────────────────────────────────────────────
@@ -237,6 +242,11 @@ export async function submitOrder(
   formData: FormData
 ): Promise<ActionResult> {
   const ru = await getRestaurantUser();
+
+  if (!hasPermission(ru, PERMISSIONS.CREATE_ORDERS)) {
+    return { error: "You don't have permission to create orders." };
+  }
+
   const service = createServiceClient();
 
   const sessionId = formData.get("session_id") as string;
@@ -308,21 +318,40 @@ export async function closeSessionWithPayment(
   formData: FormData
 ): Promise<ActionResult> {
   const ru = await getRestaurantUser();
+
+  if (!hasPermission(ru, PERMISSIONS.CLOSE_BILLS)) {
+    return { error: "You don't have permission to close bills." };
+  }
+
   const service = createServiceClient();
 
-  const sessionId = formData.get("session_id") as string;
-  const amount = parseFloat(formData.get("amount") as string);
-  const method = formData.get("payment_method") as string;
+  const sessionId   = formData.get("session_id") as string;
+  const method      = (formData.get("payment_method") as string) || "cash";
+  const cashAmount  = parseFloat(formData.get("cash_amount")   as string) || 0;
+  const onlineAmount = parseFloat(formData.get("online_amount") as string) || 0;
+  const totalAmount  = parseFloat(formData.get("total_amount")  as string);
 
-  if (isNaN(amount) || amount < 0) return { error: "Invalid amount." };
+  const validMethods = ["cash", "online", "mixed"];
+  if (!validMethods.includes(method)) return { error: "Invalid payment method." };
+  if (isNaN(totalAmount) || totalAmount < 0) return { error: "Invalid total amount." };
+  if (cashAmount < 0 || onlineAmount < 0) return { error: "Amounts cannot be negative." };
+
+  if (method === "mixed") {
+    if (Math.abs(cashAmount + onlineAmount - totalAmount) > 0.01) {
+      return { error: "The combined Cash and Online amounts must equal the total payable amount." };
+    }
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await (service as any).from("payments").insert({
-    restaurant_id: ru.restaurant_id,
-    session_id: sessionId,
-    amount,
-    payment_method: method || "cash",
-    created_by: ru.id,
+    restaurant_id:  ru.restaurant_id,
+    session_id:     sessionId,
+    amount:         totalAmount,
+    cash_amount:    cashAmount,
+    online_amount:  onlineAmount,
+    total_amount:   totalAmount,
+    payment_method: method,
+    created_by:     ru.id,
   });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

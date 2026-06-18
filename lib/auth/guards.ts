@@ -2,6 +2,14 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { redirect } from "next/navigation";
 
+export type RestaurantUserContext = {
+  id: string;
+  restaurant_id: string;
+  role: string;
+  display_name: string;
+  permissions: string[];
+};
+
 export async function requireSuperAdmin() {
   const supabase = await createClient();
   const {
@@ -35,14 +43,18 @@ export async function requireRestaurantStaff() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: ru } = await (service as any)
     .from("restaurant_users")
-    .select("id, restaurant_id, role, display_name")
+    .select("id, restaurant_id, role, display_name, permissions")
     .eq("auth_user_id", user.id)
     .eq("is_active", true)
     .maybeSingle();
 
   if (!ru) redirect("/login");
 
-  return { user, restaurantUser: ru as { id: string; restaurant_id: string; role: string; display_name: string } };
+  const restaurantUser = ru as RestaurantUserContext;
+  // Normalise: permissions column may be null if row predates migration
+  if (!Array.isArray(restaurantUser.permissions)) restaurantUser.permissions = [];
+
+  return { user, restaurantUser };
 }
 
 export async function requireRestaurantAdmin() {
@@ -57,7 +69,7 @@ export async function requireRestaurantAdmin() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: ru } = await (service as any)
     .from("restaurant_users")
-    .select("id, restaurant_id, role, display_name")
+    .select("id, restaurant_id, role, display_name, permissions")
     .eq("auth_user_id", user.id)
     .eq("role", "restaurant_admin")
     .eq("is_active", true)
@@ -65,5 +77,8 @@ export async function requireRestaurantAdmin() {
 
   if (!ru) redirect("/login");
 
-  return { user, restaurantUser: ru as { id: string; restaurant_id: string; role: string; display_name: string } };
+  const restaurantUser = ru as RestaurantUserContext;
+  if (!Array.isArray(restaurantUser.permissions)) restaurantUser.permissions = [];
+
+  return { user, restaurantUser };
 }

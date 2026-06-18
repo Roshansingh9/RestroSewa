@@ -1,9 +1,19 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getRestaurantWithStaff } from "@/app/actions/restaurants";
-import type { StaffRow } from "@/app/actions/restaurants";
 import { AddStaffForm } from "./_components/add-staff-form";
+import { StaffSection } from "./_components/staff-section";
 import { ChevronLeft, ExternalLink } from "lucide-react";
+
+const TYPE_LABELS: Record<string, string> = {
+  restaurant:        "Restaurant",
+  hotel:             "Hotel",
+  restaurant_hotel:  "Restaurant + Hotel",
+  cafe:              "Café",
+  lodge:             "Lodge",
+  guesthouse:        "Guesthouse",
+  resort:            "Resort",
+};
 
 function Badge({
   children,
@@ -27,66 +37,6 @@ function Badge({
   );
 }
 
-function StaffCard({ s, restaurantSlug }: { s: StaffRow; restaurantSlug: string }) {
-  const initials = s.display_name
-    .split(" ")
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
-
-  return (
-    <div
-      className="flex items-center gap-4 px-4 py-3 rounded-lg border"
-      style={{
-        background: "var(--color-canvas)",
-        borderColor: "var(--color-hairline)",
-      }}
-    >
-      <div
-        className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium shrink-0"
-        style={{ background: "var(--color-canvas-soft)", color: "var(--color-ink-mute)" }}
-      >
-        {initials}
-      </div>
-
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate" style={{ color: "var(--color-ink)" }}>
-          {s.display_name}
-        </p>
-        {s.title && (
-          <p className="text-xs truncate" style={{ color: "var(--color-ink-mute)" }}>
-            {s.title}
-          </p>
-        )}
-      </div>
-
-      <Badge
-        color={s.role === "restaurant_admin" ? "var(--color-primary)" : "var(--color-ink-mute)"}
-      >
-        {s.role === "restaurant_admin" ? "Admin" : "Staff"}
-      </Badge>
-
-      <div
-        className="w-2 h-2 rounded-full shrink-0"
-        title={s.auth_user_id ? "Has login" : "No auth account"}
-        style={{ background: s.auth_user_id ? "#1a7a4a" : "#d1d5db" }}
-      />
-
-      {s.auth_user_id && (
-        <Link
-          href={`/login?mode=staff&slug=${restaurantSlug}`}
-          target="_blank"
-          className="text-xs shrink-0"
-          style={{ color: "var(--color-ink-mute)" }}
-        >
-          <ExternalLink size={13} />
-        </Link>
-      )}
-    </div>
-  );
-}
-
 export default async function RestaurantDetailPage({
   params,
 }: {
@@ -99,9 +49,6 @@ export default async function RestaurantDetailPage({
 
   const { restaurant: r, staff } = result;
 
-  const admins = staff.filter((s) => s.role === "restaurant_admin");
-  const employees = staff.filter((s) => s.role === "restaurant_employee");
-
   return (
     <div className="p-8 max-w-2xl">
       <Link
@@ -113,22 +60,16 @@ export default async function RestaurantDetailPage({
         Restaurants
       </Link>
 
+      {/* Restaurant info card */}
       <div
         className="rounded-xl border px-6 py-5 mb-6"
-        style={{
-          background: "var(--color-canvas)",
-          borderColor: "var(--color-hairline)",
-        }}
+        style={{ background: "var(--color-canvas)", borderColor: "var(--color-hairline)" }}
       >
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1
               className="text-xl"
-              style={{
-                color: "var(--color-ink)",
-                fontWeight: 300,
-                letterSpacing: "-0.4px",
-              }}
+              style={{ color: "var(--color-ink)", fontWeight: 300, letterSpacing: "-0.4px" }}
             >
               {r.name}
             </h1>
@@ -140,7 +81,7 @@ export default async function RestaurantDetailPage({
             <Badge color={r.is_active ? "#1a7a4a" : "#d1d5db"}>
               {r.is_active ? "Active" : "Inactive"}
             </Badge>
-            <Badge>{r.type}</Badge>
+            <Badge>{TYPE_LABELS[r.type] ?? r.type}</Badge>
             <Badge
               color={
                 r.subscription_tier === "pro"
@@ -181,9 +122,22 @@ export default async function RestaurantDetailPage({
               /login?mode=staff&amp;slug={r.slug} <ExternalLink size={11} />
             </Link>
           </div>
+          {r.max_tables != null && (
+            <div>
+              <p style={{ color: "var(--color-ink-mute)", fontSize: 11 }}>MAX TABLES</p>
+              <p className="mt-0.5" style={{ color: "var(--color-ink)" }}>{r.max_tables}</p>
+            </div>
+          )}
+          {r.max_rooms != null && (
+            <div>
+              <p style={{ color: "var(--color-ink-mute)", fontSize: 11 }}>MAX ROOMS</p>
+              <p className="mt-0.5" style={{ color: "var(--color-ink)" }}>{r.max_rooms}</p>
+            </div>
+          )}
         </div>
       </div>
 
+      {/* Staff section */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2
@@ -191,53 +145,18 @@ export default async function RestaurantDetailPage({
             style={{ color: "var(--color-ink)", fontWeight: 400 }}
           >
             Staff members
-            <span
-              className="ml-2 text-sm"
-              style={{ color: "var(--color-ink-mute)" }}
-            >
+            <span className="ml-2 text-sm" style={{ color: "var(--color-ink-mute)" }}>
               ({staff.length})
             </span>
           </h2>
         </div>
 
-        <div className="flex flex-col gap-4 mb-6">
-          {admins.length > 0 && (
-            <div>
-              <p
-                className="text-xs uppercase tracking-wide mb-2"
-                style={{ color: "var(--color-ink-mute)", letterSpacing: "0.06em" }}
-              >
-                Admins
-              </p>
-              <div className="flex flex-col gap-1.5">
-                {admins.map((s) => (
-                  <StaffCard key={s.id} s={s} restaurantSlug={r.slug} />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {employees.length > 0 && (
-            <div>
-              <p
-                className="text-xs uppercase tracking-wide mb-2"
-                style={{ color: "var(--color-ink-mute)", letterSpacing: "0.06em" }}
-              >
-                Staff
-              </p>
-              <div className="flex flex-col gap-1.5">
-                {employees.map((s) => (
-                  <StaffCard key={s.id} s={s} restaurantSlug={r.slug} />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {staff.length === 0 && (
-            <p className="text-sm" style={{ color: "var(--color-ink-mute)" }}>
-              No staff yet. Add the restaurant admin first.
-            </p>
-          )}
+        <div className="mb-6">
+          <StaffSection
+            staff={staff}
+            restaurantSlug={r.slug}
+            restaurantId={r.id}
+          />
         </div>
 
         <AddStaffForm restaurantId={r.id} />

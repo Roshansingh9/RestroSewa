@@ -12,10 +12,11 @@ const TIER_COLORS: Record<string, string> = {
 
 const TYPE_LABELS: Record<string, string> = {
   restaurant: "Restaurant",
+  hotel: "Hotel",
+  restaurant_hotel: "Restaurant + Hotel",
   cafe: "Café",
   lodge: "Lodge",
   guesthouse: "Guesthouse",
-  hotel: "Hotel",
   resort: "Resort",
 };
 

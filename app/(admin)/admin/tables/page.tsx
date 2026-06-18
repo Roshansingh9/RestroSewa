@@ -1,10 +1,13 @@
 import { requireRestaurantAdmin } from "@/lib/auth/guards";
-import { getTablesWithGroups } from "@/app/actions/tables-admin";
+import { getTablesWithGroups, getRestaurantSlug } from "@/app/actions/tables-admin";
 import { TablesClient } from "./_components/tables-client";
 
 export default async function TablesPage() {
   const { restaurantUser } = await requireRestaurantAdmin();
-  const { ungrouped, groups } = await getTablesWithGroups(restaurantUser.restaurant_id);
+  const [{ ungrouped, groups }, restaurantSlug] = await Promise.all([
+    getTablesWithGroups(restaurantUser.restaurant_id),
+    getRestaurantSlug(restaurantUser.restaurant_id),
+  ]);
 
   return (
     <div className="p-8">
@@ -22,6 +25,7 @@ export default async function TablesPage() {
         ungrouped={ungrouped}
         groups={groups}
         restaurantId={restaurantUser.restaurant_id}
+        restaurantSlug={restaurantSlug ?? ""}
       />
     </div>
   );

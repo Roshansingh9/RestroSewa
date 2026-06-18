@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getSessionDetail } from "@/app/actions/pos";
+import { requireRestaurantStaff } from "@/lib/auth/guards";
+import { hasPermission, PERMISSIONS } from "@/lib/permissions";
 import { SessionClient } from "./_components/session-client";
 import { ChevronLeft } from "lucide-react";
 
@@ -10,9 +12,15 @@ export default async function SessionPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const session = await getSessionDetail(id);
+  const [session, { restaurantUser }] = await Promise.all([
+    getSessionDetail(id),
+    requireRestaurantStaff(),
+  ]);
 
   if (!session) notFound();
+
+  const canCreateOrders = hasPermission(restaurantUser, PERMISSIONS.CREATE_ORDERS);
+  const canCloseBills   = hasPermission(restaurantUser, PERMISSIONS.CLOSE_BILLS);
 
   const label =
     session.type === "table" && session.table_number
@@ -53,7 +61,11 @@ export default async function SessionPage({
         </span>
       </div>
 
-      <SessionClient session={session} />
+      <SessionClient
+        session={session}
+        canCreateOrders={canCreateOrders}
+        canCloseBills={canCloseBills}
+      />
     </div>
   );
 }

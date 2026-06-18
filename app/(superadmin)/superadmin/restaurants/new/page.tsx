@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { createRestaurant } from "@/app/actions/restaurants";
 import type { ActionResult } from "@/app/actions/restaurants";
@@ -8,20 +8,26 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ChevronLeft } from "lucide-react";
 
-const TYPES = [
+type BusinessType = "restaurant" | "hotel" | "restaurant_hotel";
+type Tier = "free" | "basic" | "pro";
+
+const TYPES: { value: BusinessType; label: string }[] = [
   { value: "restaurant", label: "Restaurant" },
-  { value: "cafe", label: "Café" },
-  { value: "lodge", label: "Lodge" },
-  { value: "guesthouse", label: "Guesthouse" },
   { value: "hotel", label: "Hotel" },
-  { value: "resort", label: "Resort" },
+  { value: "restaurant_hotel", label: "Restaurant + Hotel" },
 ];
 
-const TIERS = [
+const TIERS: { value: Tier; label: string }[] = [
   { value: "free", label: "Free" },
   { value: "basic", label: "Basic" },
   { value: "pro", label: "Pro" },
 ];
+
+const TIER_DEFAULTS: Record<Tier, { tables: number; rooms: number }> = {
+  free:  { tables: 10,  rooms: 10  },
+  basic: { tables: 30,  rooms: 30  },
+  pro:   { tables: 100, rooms: 100 },
+};
 
 function toSlug(name: string) {
   return name
@@ -32,14 +38,38 @@ function toSlug(name: string) {
     .replace(/^-|-$/g, "");
 }
 
+function FieldLabel({ htmlFor, children }: { htmlFor?: string; children: React.ReactNode }) {
+  return (
+    <label
+      htmlFor={htmlFor}
+      className="text-xs font-medium uppercase tracking-wide"
+      style={{ color: "var(--color-ink-mute)", letterSpacing: "0.06em" }}
+    >
+      {children}
+    </label>
+  );
+}
+
 export default function NewRestaurantPage() {
   const [state, action, pending] = useActionState<ActionResult, FormData>(
     createRestaurant,
     null
   );
+
   const nameRef = useRef<HTMLInputElement>(null);
   const slugRef = useRef<HTMLInputElement>(null);
   const slugTouched = useRef(false);
+
+  const [businessType, setBusinessType] = useState<BusinessType>("restaurant");
+  const [tier, setTier] = useState<Tier>("free");
+  const [maxTables, setMaxTables] = useState(TIER_DEFAULTS.free.tables);
+  const [maxRooms, setMaxRooms] = useState(TIER_DEFAULTS.free.rooms);
+
+  useEffect(() => {
+    if (state && "redirectTo" in state) {
+      window.location.replace(state.redirectTo);
+    }
+  }, [state]);
 
   useEffect(() => {
     const name = nameRef.current;
@@ -51,7 +81,6 @@ export default function NewRestaurantPage() {
         slug.value = toSlug(name!.value);
       }
     }
-
     function onSlugInput() {
       slugTouched.current = true;
     }
@@ -63,6 +92,17 @@ export default function NewRestaurantPage() {
       slug.removeEventListener("input", onSlugInput);
     };
   }, []);
+
+  function handleTierChange(newTier: Tier) {
+    setTier(newTier);
+    setMaxTables(TIER_DEFAULTS[newTier].tables);
+    setMaxRooms(TIER_DEFAULTS[newTier].rooms);
+  }
+
+  const showTables = businessType === "restaurant" || businessType === "restaurant_hotel";
+  const showRooms = businessType === "hotel" || businessType === "restaurant_hotel";
+  const isNavigating = !!(state && "redirectTo" in state);
+  const errorMsg = state && "error" in state ? state.error : null;
 
   return (
     <div className="p-8 max-w-lg">
@@ -77,13 +117,9 @@ export default function NewRestaurantPage() {
 
       <h1
         className="text-xl mb-6"
-        style={{
-          color: "var(--color-ink)",
-          fontWeight: 300,
-          letterSpacing: "-0.4px",
-        }}
+        style={{ color: "var(--color-ink)", fontWeight: 300, letterSpacing: "-0.4px" }}
       >
-        New restaurant
+        New business
       </h1>
 
       <form
@@ -94,28 +130,24 @@ export default function NewRestaurantPage() {
           borderColor: "var(--color-hairline)",
         }}
       >
+        {/* Business name */}
         <div className="flex flex-col gap-1.5">
-          <label
-            htmlFor="name"
-            className="text-xs font-medium uppercase tracking-wide"
-            style={{ color: "var(--color-ink-mute)", letterSpacing: "0.06em" }}
-          >
-            Restaurant name
-          </label>
-          <Input id="name" name="name" ref={nameRef} required placeholder="The Grand Café" />
+          <FieldLabel htmlFor="name">Business name</FieldLabel>
+          <Input
+            id="name"
+            name="name"
+            ref={nameRef}
+            required
+            placeholder="The Grand Hotel"
+          />
         </div>
 
+        {/* URL slug */}
         <div className="flex flex-col gap-1.5">
-          <label
-            htmlFor="slug"
-            className="text-xs font-medium uppercase tracking-wide"
-            style={{ color: "var(--color-ink-mute)", letterSpacing: "0.06em" }}
-          >
-            URL slug
-          </label>
-          <div className="flex items-center gap-0">
+          <FieldLabel htmlFor="slug">URL slug</FieldLabel>
+          <div className="flex items-center">
             <span
-              className="text-sm px-3 h-9 flex items-center rounded-l-sm border-y border-l"
+              className="text-sm px-3 h-9 flex items-center rounded-l-sm border-y border-l shrink-0"
               style={{
                 color: "var(--color-ink-mute)",
                 borderColor: "var(--color-hairline-input)",
@@ -130,7 +162,7 @@ export default function NewRestaurantPage() {
               name="slug"
               ref={slugRef}
               required
-              placeholder="grand-cafe"
+              placeholder="grand-hotel"
               className="rounded-l-none"
               pattern="[a-z0-9-]+"
             />
@@ -140,41 +172,41 @@ export default function NewRestaurantPage() {
           </p>
         </div>
 
-        <div className="flex flex-col gap-1.5">
-          <label
-            htmlFor="type"
-            className="text-xs font-medium uppercase tracking-wide"
-            style={{ color: "var(--color-ink-mute)", letterSpacing: "0.06em" }}
-          >
-            Business type
-          </label>
-          <select
-            id="type"
-            name="type"
-            defaultValue="restaurant"
-            className="h-9 rounded-sm border px-3 text-sm outline-none focus:border-primary"
-            style={{
-              borderColor: "var(--color-hairline-input)",
-              color: "var(--color-ink)",
-              background: "var(--color-canvas)",
-            }}
-          >
-            {TYPES.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-          </select>
+        {/* Business type */}
+        <div className="flex flex-col gap-2">
+          <FieldLabel>Business type</FieldLabel>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            {TYPES.map((t) => {
+              const active = businessType === t.value;
+              return (
+                <label
+                  key={t.value}
+                  className="flex items-center gap-2.5 cursor-pointer px-3 py-2.5 rounded-lg border flex-1 transition-colors"
+                  style={{
+                    borderColor: active ? "var(--color-primary)" : "var(--color-hairline-input)",
+                    background: active ? "rgba(99,102,241,0.06)" : "var(--color-canvas-soft)",
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="type"
+                    value={t.value}
+                    checked={active}
+                    onChange={() => setBusinessType(t.value)}
+                  />
+                  <span className="text-sm" style={{ color: "var(--color-ink)" }}>
+                    {t.label}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
         </div>
 
-        <div className="flex flex-col gap-1.5">
-          <label
-            className="text-xs font-medium uppercase tracking-wide"
-            style={{ color: "var(--color-ink-mute)", letterSpacing: "0.06em" }}
-          >
-            Subscription tier
-          </label>
-          <div className="flex gap-2">
+        {/* Subscription tier */}
+        <div className="flex flex-col gap-2">
+          <FieldLabel>Subscription tier</FieldLabel>
+          <div className="flex gap-4">
             {TIERS.map((t) => (
               <label
                 key={t.value}
@@ -185,7 +217,8 @@ export default function NewRestaurantPage() {
                   type="radio"
                   name="subscription_tier"
                   value={t.value}
-                  defaultChecked={t.value === "free"}
+                  checked={tier === t.value}
+                  onChange={() => handleTierChange(t.value)}
                 />
                 {t.label}
               </label>
@@ -193,18 +226,80 @@ export default function NewRestaurantPage() {
           </div>
         </div>
 
-        {state?.error && (
+        {/* Resource limits */}
+        <div
+          className="flex flex-col gap-4 rounded-lg border px-4 py-4"
+          style={{
+            borderColor: "var(--color-hairline)",
+            background: "var(--color-canvas-soft)",
+          }}
+        >
+          <p
+            className="text-xs font-medium uppercase"
+            style={{ color: "var(--color-ink-mute)", letterSpacing: "0.08em" }}
+          >
+            Resource limits
+          </p>
+
+          {showTables && (
+            <div className="flex flex-col gap-1.5">
+              <FieldLabel htmlFor="max_tables">Maximum tables</FieldLabel>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="max_tables"
+                  name="max_tables"
+                  type="number"
+                  min="1"
+                  required
+                  value={maxTables}
+                  onChange={(e) => setMaxTables(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="max-w-[120px]"
+                />
+                <span className="text-xs" style={{ color: "var(--color-ink-mute)" }}>
+                  tables maximum
+                </span>
+              </div>
+            </div>
+          )}
+
+          {showRooms && (
+            <div className="flex flex-col gap-1.5">
+              <FieldLabel htmlFor="max_rooms">Maximum rooms</FieldLabel>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="max_rooms"
+                  name="max_rooms"
+                  type="number"
+                  min="1"
+                  required
+                  value={maxRooms}
+                  onChange={(e) => setMaxRooms(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="max-w-[120px]"
+                />
+                <span className="text-xs" style={{ color: "var(--color-ink-mute)" }}>
+                  rooms maximum
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {errorMsg && (
           <p
             className="text-sm rounded-md px-3 py-2"
             style={{ color: "var(--color-ruby)", background: "#fff0f4" }}
           >
-            {state.error}
+            {errorMsg}
           </p>
         )}
 
         <div className="flex gap-3 pt-1">
-          <Button type="submit" variant="primary" disabled={pending}>
-            {pending ? "Creating…" : "Create restaurant"}
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={pending || isNavigating}
+          >
+            {pending || isNavigating ? "Creating…" : "Create business"}
           </Button>
           <Link href="/superadmin/dashboard">
             <Button type="button" variant="secondary">

@@ -3,37 +3,55 @@
 import { createServiceClient } from "@/lib/supabase/service";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import { PERMISSIONS } from "@/lib/permissions";
+import type { Permission } from "@/lib/permissions";
 
-export type ActionResult = { error: string } | null;
+export type ActionResult = { error: string } | { redirectTo: string } | null;
+
+const PIN_REGEX = /^[0-9]{4}$/;
+const VALID_PERMISSIONS = new Set<string>(Object.values(PERMISSIONS));
+
+function parsePermissions(raw: string | null): string[] {
+  try {
+    const parsed = JSON.parse(raw ?? "[]");
+    if (!Array.isArray(parsed)) return [];
+    return (parsed as unknown[]).filter(
+      (p): p is string => typeof p === "string" && VALID_PERMISSIONS.has(p)
+    );
+  } catch {
+    return [];
+  }
+}
 
 export async function createStaffMember(
   _prevState: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
   const restaurantId = formData.get("restaurant_id") as string;
-  const displayName = (formData.get("display_name") as string)?.trim();
-  const title = (formData.get("title") as string)?.trim() ?? "";
-  const role = formData.get("role") as string;
-  const pin = formData.get("pin") as string;
+  const displayName  = (formData.get("display_name") as string)?.trim();
+  const title        = (formData.get("title") as string)?.trim() ?? "";
+  const role         = formData.get("role") as string;
+  const pin          = formData.get("pin") as string;
+  const permissions  = parsePermissions(formData.get("permissions") as string | null);
 
   if (!displayName || !restaurantId) return { error: "Name is required." };
-  if (pin.length < 4) return { error: "PIN must be at least 4 digits." };
+  if (!PIN_REGEX.test(pin)) return { error: "PIN must be exactly 4 digits (numbers only)." };
   if (!["restaurant_admin", "restaurant_employee"].includes(role))
     return { error: "Invalid role." };
 
   const service = createServiceClient();
 
-  // 1. Create restaurant_user record to get the ID
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: newUser, error: insertError } = await (service as any)
     .from("restaurant_users")
-    .insert({ restaurant_id: restaurantId, display_name: displayName, title, role })
+    .insert({ restaurant_id: restaurantId, display_name: displayName, title, role, permissions })
     .select("id")
     .single();
 
   if (insertError) return { error: "Failed to create staff record." };
 
-  // 2. Create Supabase Auth user (synthetic email + PIN as password)
+  // Supabase Auth hashes the PIN with bcrypt before storing — plain text never persists.
   const admin = createAdminClient();
   const syntheticEmail = `emp-${newUser.id}@restrosewa.internal`;
 
@@ -44,20 +62,40 @@ export async function createStaffMember(
   });
 
   if (authError) {
-    // Rollback the restaurant_users insert
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (service as any).from("restaurant_users").delete().eq("id", newUser.id);
     return { error: `Auth account failed: ${authError.message}` };
   }
 
-  // 3. Link auth_user_id
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await (service as any)
     .from("restaurant_users")
     .update({ auth_user_id: authData.user.id })
     .eq("id", newUser.id);
 
-  redirect(`/superadmin/restaurants/${restaurantId}`);
+  return { redirectTo: `/superadmin/restaurants/${restaurantId}` };
+}
+
+export async function updateStaffPermissions(
+  _prevState: ActionResult,
+  formData: FormData
+): Promise<ActionResult> {
+  const staffId      = formData.get("staff_id") as string;
+  const restaurantId = formData.get("restaurant_id") as string;
+  const permissions  = parsePermissions(formData.get("permissions") as string | null);
+
+  if (!staffId || !restaurantId) return { error: "Invalid request." };
+
+  const service = createServiceClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (service as any)
+    .from("restaurant_users")
+    .update({ permissions })
+    .eq("id", staffId);
+
+  if (error) return { error: "Failed to update permissions." };
+  revalidatePath(`/superadmin/restaurants/${restaurantId}`);
+  return null;
 }
 
 export async function resetStaffPin(
@@ -65,7 +103,7 @@ export async function resetStaffPin(
   authUserId: string,
   newPin: string
 ): Promise<ActionResult> {
-  if (newPin.length < 4) return { error: "PIN must be at least 4 digits." };
+  if (!PIN_REGEX.test(newPin)) return { error: "PIN must be exactly 4 digits (numbers only)." };
 
   const admin = createAdminClient();
   const { error } = await admin.auth.admin.updateUserById(authUserId, {

@@ -2,9 +2,10 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-export type AuthResult = { error: string } | null;
+export type AuthResult = { error: string } | { redirectTo: string } | null;
 
 export async function loginWithEmail(
   _prevState: AuthResult,
@@ -54,10 +55,11 @@ export async function loginWithEmail(
     return { error: "No account found. Please contact your administrator." };
   }
 
+  revalidatePath("/", "layout");
   if (ru.role === "restaurant_admin") {
-    redirect("/admin/dashboard");
+    return { redirectTo: "/admin/dashboard" };
   }
-  redirect("/employee/dashboard");
+  return { redirectTo: "/employee/dashboard" };
 }
 
 export async function loginWithEmailSuperAdmin(
@@ -93,7 +95,8 @@ export async function loginWithEmailSuperAdmin(
     return { error: "This login is for Super Admins only." };
   }
 
-  redirect("/superadmin/dashboard");
+  revalidatePath("/", "layout");
+  return { redirectTo: "/superadmin/dashboard" };
 }
 
 export async function loginWithPin(
@@ -103,8 +106,8 @@ export async function loginWithPin(
   const restaurantUserId = formData.get("restaurant_user_id") as string;
   const pin = formData.get("pin") as string;
 
-  if (!restaurantUserId || pin.length < 4) {
-    return { error: "Please enter your PIN." };
+  if (!restaurantUserId || !/^[0-9]{4}$/.test(pin)) {
+    return { error: "PIN must be exactly 4 digits." };
   }
 
   const syntheticEmail = `emp-${restaurantUserId}@restrosewa.internal`;
@@ -118,7 +121,8 @@ export async function loginWithPin(
     return { error: "Incorrect PIN. Please try again." };
   }
 
-  redirect("/employee/dashboard");
+  revalidatePath("/", "layout");
+  return { redirectTo: "/employee/dashboard" };
 }
 
 export async function logout() {

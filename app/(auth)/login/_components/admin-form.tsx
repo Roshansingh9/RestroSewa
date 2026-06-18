@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
 import { loginWithEmail } from "@/app/actions/auth";
 import type { AuthResult } from "@/app/actions/auth";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,15 @@ export function AdminLoginForm() {
     loginWithEmail,
     null
   );
+
+  useEffect(() => {
+    if (state && "redirectTo" in state) {
+      window.location.replace(state.redirectTo);
+    }
+  }, [state]);
+
+  const isNavigating = !!(state && "redirectTo" in state);
+  const errorMsg = state && "error" in state ? state.error : null;
 
   return (
     <form action={action} className="flex flex-col gap-4">
@@ -50,12 +59,12 @@ export function AdminLoginForm() {
         />
       </div>
 
-      {state?.error && (
+      {errorMsg && (
         <p
           className="text-sm rounded-md px-3 py-2"
           style={{ color: "var(--color-ruby)", background: "#fff0f4" }}
         >
-          {state.error}
+          {errorMsg}
         </p>
       )}
 
@@ -63,9 +72,9 @@ export function AdminLoginForm() {
         type="submit"
         variant="primary"
         className="w-full mt-2"
-        disabled={pending}
+        disabled={pending || isNavigating}
       >
-        {pending ? "Signing in…" : "Sign in"}
+        {pending || isNavigating ? "Signing in…" : "Sign in"}
       </Button>
     </form>
   );

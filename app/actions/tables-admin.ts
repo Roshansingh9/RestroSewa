@@ -112,3 +112,14 @@ export async function deleteTable(id: string): Promise<ActionResult> {
   revalidatePath("/admin/tables");
   return null;
 }
+
+export async function getRestaurantSlug(restaurantId: string): Promise<string | null> {
+  const service = createServiceClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data } = await (service as any)
+    .from("restaurants")
+    .select("slug")
+    .eq("id", restaurantId)
+    .maybeSingle();
+  return (data as { slug: string } | null)?.slug ?? null;
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useTransition } from "react";
+import { useActionState, useTransition, useState } from "react";
 import { closeSessionWithPayment, updateOrderItemStatus } from "@/app/actions/pos";
 import type { ActionResult, OrderItemRow, SessionDetail } from "@/app/actions/pos";
 import Link from "next/link";
@@ -92,13 +92,43 @@ function OrderItem({ item, sessionId }: { item: OrderItemRow; sessionId: string 
   );
 }
 
+type PaymentMethod = "cash" | "online" | "mixed";
+
+const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
+  { value: "cash",   label: "Cash"   },
+  { value: "online", label: "Online" },
+  { value: "mixed",  label: "Mixed"  },
+];
+
 function PaymentForm({ session }: { session: SessionDetail }) {
   const [state, action, pending] = useActionState<ActionResult, FormData>(
     closeSessionWithPayment,
     null
   );
+  const [method, setMethod] = useState<PaymentMethod>("cash");
+  const [cashAmt, setCashAmt]     = useState("");
+  const [onlineAmt, setOnlineAmt] = useState("");
 
-  const METHODS = ["cash", "card", "upi", "other"];
+  const total = session.total;
+
+  function handleCashChange(val: string) {
+    setCashAmt(val);
+    const cash = parseFloat(val);
+    setOnlineAmt(!isNaN(cash) && cash >= 0 ? Math.max(0, total - cash).toFixed(2) : "");
+  }
+
+  function handleOnlineChange(val: string) {
+    setOnlineAmt(val);
+    const online = parseFloat(val);
+    setCashAmt(!isNaN(online) && online >= 0 ? Math.max(0, total - online).toFixed(2) : "");
+  }
+
+  const bothFilled  = cashAmt !== "" && onlineAmt !== "";
+  const mixedSum    = (parseFloat(cashAmt) || 0) + (parseFloat(onlineAmt) || 0);
+  const mixedValid  = method !== "mixed" || (bothFilled && Math.abs(mixedSum - total) < 0.01);
+  const canSubmit   = !pending && mixedValid && (method !== "mixed" || bothFilled);
+
+  const errorMsg = state?.error;
 
   return (
     <form
@@ -106,59 +136,172 @@ function PaymentForm({ session }: { session: SessionDetail }) {
       className="rounded-xl border px-5 py-5 flex flex-col gap-4"
       style={{ background: "var(--color-canvas)", borderColor: "var(--color-primary)", borderWidth: 1.5 }}
     >
-      <input type="hidden" name="session_id" value={session.id} />
+      <input type="hidden" name="session_id"    value={session.id} />
+      <input type="hidden" name="total_amount"  value={total.toFixed(2)} />
+
+      {/* Pre-computed amounts for cash / online */}
+      {method === "cash" && (
+        <>
+          <input type="hidden" name="cash_amount"   value={total.toFixed(2)} />
+          <input type="hidden" name="online_amount" value="0" />
+        </>
+      )}
+      {method === "online" && (
+        <>
+          <input type="hidden" name="cash_amount"   value="0" />
+          <input type="hidden" name="online_amount" value={total.toFixed(2)} />
+        </>
+      )}
 
       <p className="text-base font-medium" style={{ color: "var(--color-ink)" }}>
         Close &amp; collect payment
       </p>
 
-      <div className="flex flex-col gap-1.5">
-        <label className="text-xs uppercase tracking-wide" style={{ color: "var(--color-ink-mute)", letterSpacing: "0.06em" }}>
-          Amount (₹)
-        </label>
-        <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm" style={{ color: "var(--color-ink-mute)" }}>₹</span>
-          <Input
-            name="amount"
-            type="number"
-            min="0"
-            step="0.01"
-            defaultValue={session.total.toFixed(2)}
-            required
-            className="pl-7"
-          />
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-1.5">
+      {/* Method selector */}
+      <div className="flex flex-col gap-2">
         <p className="text-xs uppercase tracking-wide" style={{ color: "var(--color-ink-mute)", letterSpacing: "0.06em" }}>
-          Method
+          Payment method
         </p>
-        <div className="flex gap-3 flex-wrap">
-          {METHODS.map((m) => (
-            <label key={m} className="flex items-center gap-1.5 text-sm capitalize cursor-pointer" style={{ color: "var(--color-ink)" }}>
-              <input type="radio" name="payment_method" value={m} defaultChecked={m === "cash"} />
-              {m}
-            </label>
-          ))}
+        <div className="flex gap-1">
+          {PAYMENT_METHODS.map((m) => {
+            const active = method === m.value;
+            return (
+              <label
+                key={m.value}
+                className="flex items-center gap-2 cursor-pointer flex-1 justify-center py-2 rounded-lg border text-sm transition-colors"
+                style={{
+                  borderColor: active ? "var(--color-primary)" : "var(--color-hairline-input)",
+                  background:  active ? "rgba(99,102,241,0.06)" : "var(--color-canvas-soft)",
+                  color: "var(--color-ink)",
+                }}
+              >
+                <input
+                  type="radio"
+                  name="payment_method"
+                  value={m.value}
+                  checked={active}
+                  onChange={() => { setMethod(m.value); setCashAmt(""); setOnlineAmt(""); }}
+                  className="sr-only"
+                />
+                {m.label}
+              </label>
+            );
+          })}
         </div>
       </div>
 
-      {state?.error && (
-        <p className="text-sm" style={{ color: "var(--color-ruby)" }}>{state.error}</p>
+      {/* Cash or Online: show total as read-only */}
+      {method !== "mixed" && (
+        <div
+          className="flex items-center justify-between px-4 py-3 rounded-lg"
+          style={{ background: "var(--color-canvas-soft)", border: "1px solid var(--color-hairline)" }}
+        >
+          <span className="text-sm" style={{ color: "var(--color-ink-mute)" }}>Amount</span>
+          <span className="text-lg font-medium tabular" style={{ color: "var(--color-ink)" }}>
+            ₹{total.toFixed(0)}
+          </span>
+        </div>
       )}
 
-      <Button type="submit" variant="primary" disabled={pending}>
+      {/* Mixed: two inputs with auto-calculation */}
+      {method === "mixed" && (
+        <div className="flex flex-col gap-3">
+          <div
+            className="flex items-center justify-between px-4 py-2 rounded-lg text-xs"
+            style={{ background: "var(--color-canvas-soft)", border: "1px solid var(--color-hairline)", color: "var(--color-ink-mute)" }}
+          >
+            <span>Total bill</span>
+            <span className="font-medium tabular" style={{ color: "var(--color-ink)" }}>₹{total.toFixed(0)}</span>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label
+              htmlFor="cash_amount"
+              className="text-xs uppercase tracking-wide"
+              style={{ color: "var(--color-ink-mute)", letterSpacing: "0.06em" }}
+            >
+              Cash amount (₹)
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: "var(--color-ink-mute)" }}>₹</span>
+              <Input
+                id="cash_amount"
+                name="cash_amount"
+                type="number"
+                min="0"
+                max={total}
+                step="0.01"
+                placeholder="0.00"
+                value={cashAmt}
+                onChange={(e) => handleCashChange(e.target.value)}
+                className="pl-7"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label
+              htmlFor="online_amount"
+              className="text-xs uppercase tracking-wide"
+              style={{ color: "var(--color-ink-mute)", letterSpacing: "0.06em" }}
+            >
+              Online amount (₹)
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm pointer-events-none" style={{ color: "var(--color-ink-mute)" }}>₹</span>
+              <Input
+                id="online_amount"
+                name="online_amount"
+                type="number"
+                min="0"
+                max={total}
+                step="0.01"
+                placeholder="0.00"
+                value={onlineAmt}
+                onChange={(e) => handleOnlineChange(e.target.value)}
+                className="pl-7"
+              />
+            </div>
+          </div>
+
+          {bothFilled && !mixedValid && (
+            <p className="text-xs" style={{ color: "var(--color-ruby)" }}>
+              The combined Cash and Online amounts must equal the total payable amount (₹{total.toFixed(0)}).
+            </p>
+          )}
+          {bothFilled && mixedValid && (
+            <p className="text-xs" style={{ color: "#1a7a4a" }}>
+              ✓ Amounts match
+            </p>
+          )}
+        </div>
+      )}
+
+      {errorMsg && (
+        <p className="text-sm rounded-md px-3 py-2" style={{ color: "var(--color-ruby)", background: "#fff0f4" }}>
+          {errorMsg}
+        </p>
+      )}
+
+      <Button type="submit" variant="primary" disabled={!canSubmit}>
         {pending ? "Closing…" : "Complete & close session"}
       </Button>
     </form>
   );
 }
 
-export function SessionClient({ session }: { session: SessionDetail }) {
-  const pending = session.items.filter((i) => i.item_status !== "served");
-  const served = session.items.filter((i) => i.item_status === "served");
-  const isClosed = session.status === "closed";
+export function SessionClient({
+  session,
+  canCreateOrders = false,
+  canCloseBills = false,
+}: {
+  session: SessionDetail;
+  canCreateOrders?: boolean;
+  canCloseBills?: boolean;
+}) {
+  const pendingItems = session.items.filter((i) => i.item_status !== "served");
+  const servedItems  = session.items.filter((i) => i.item_status === "served");
+  const isClosed     = session.status === "closed";
 
   return (
     <div className="flex flex-col gap-5 max-w-lg">
@@ -177,13 +320,13 @@ export function SessionClient({ session }: { session: SessionDetail }) {
           className="rounded-xl border overflow-hidden"
           style={{ background: "var(--color-canvas)", borderColor: "var(--color-hairline)" }}
         >
-          {pending.map((i) => <OrderItem key={i.id} item={i} sessionId={session.id} />)}
-          {served.length > 0 && pending.length > 0 && (
+          {pendingItems.map((i) => <OrderItem key={i.id} item={i} sessionId={session.id} />)}
+          {servedItems.length > 0 && pendingItems.length > 0 && (
             <div className="px-4 py-1.5 border-t" style={{ borderColor: "var(--color-hairline)", background: "var(--color-canvas-soft)" }}>
               <p className="text-xs" style={{ color: "var(--color-ink-mute)" }}>Served</p>
             </div>
           )}
-          {served.map((i) => <OrderItem key={i.id} item={i} sessionId={session.id} />)}
+          {servedItems.map((i) => <OrderItem key={i.id} item={i} sessionId={session.id} />)}
           {/* Total */}
           <div
             className="flex justify-between px-4 py-3 border-t"
@@ -200,14 +343,22 @@ export function SessionClient({ session }: { session: SessionDetail }) {
       {/* Actions */}
       {!isClosed && (
         <>
-          <Link href={`/employee/session/${session.id}/add`}>
-            <Button variant="secondary" className="w-full flex items-center justify-center gap-2">
-              <Plus size={14} />
-              Add items
-            </Button>
-          </Link>
+          {canCreateOrders && (
+            <Link href={`/employee/session/${session.id}/add`}>
+              <Button variant="secondary" className="w-full flex items-center justify-center gap-2">
+                <Plus size={14} />
+                Add items
+              </Button>
+            </Link>
+          )}
 
-          <PaymentForm session={session} />
+          {canCloseBills && <PaymentForm session={session} />}
+
+          {!canCreateOrders && !canCloseBills && (
+            <p className="text-sm text-center py-2" style={{ color: "var(--color-ink-mute)" }}>
+              You don't have permission to add items or close this bill.
+            </p>
+          )}
         </>
       )}
 

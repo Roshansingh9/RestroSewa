@@ -16,6 +16,7 @@
     "clsx": "latest",
     "lucide-react": "latest",
     "next": "latest",
+    "qrcode.react": "^4.2.0",
     "radix-ui": "latest",
     "react": "latest",
     "react-dom": "latest",

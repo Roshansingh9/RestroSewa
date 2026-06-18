@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useTransition } from "react";
+import { useActionState, useTransition, useState, useRef, useEffect } from "react";
 import {
   createTableGroup,
   createTable,
@@ -10,14 +10,118 @@ import {
 import type { ActionResult, GroupWithTables, TableRow } from "@/app/actions/tables-admin";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { QrCode, Trash2 } from "lucide-react";
+import { QrCode, Trash2, X, Download } from "lucide-react";
+import { QRCodeCanvas } from "qrcode.react";
+
+// ─── QR Modal ─────────────────────────────────────────────────────────────────
+
+type QrTarget = { table: TableRow; url: string } | null;
+
+function QrModal({ target, onClose }: { target: QrTarget; onClose: () => void }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    if (target) document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [target, onClose]);
+
+  if (!target) return null;
+
+  function download() {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const link = document.createElement("a");
+    link.href = canvas.toDataURL("image/png");
+    link.download = `table-${target!.table.number}-qr.png`;
+    link.click();
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.5)" }}
+      onClick={onClose}
+    >
+      <div
+        className="flex flex-col items-center gap-5 rounded-2xl p-6 w-full max-w-xs"
+        style={{ background: "var(--color-canvas)", boxShadow: "0 16px 48px rgba(0,0,0,0.18)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between w-full">
+          <p className="font-medium text-base" style={{ color: "var(--color-ink)" }}>
+            Table {target.table.number}
+          </p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-7 h-7 rounded-full flex items-center justify-center"
+            style={{ background: "var(--color-canvas-soft)", color: "var(--color-ink-mute)" }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        {/* QR Code */}
+        <div
+          className="p-3 rounded-xl"
+          style={{ background: "#ffffff", border: "1px solid var(--color-hairline)" }}
+        >
+          <QRCodeCanvas
+            ref={canvasRef}
+            value={target.url}
+            size={220}
+            level="M"
+            marginSize={2}
+          />
+        </div>
+
+        {/* URL */}
+        <p
+          className="text-xs text-center break-all leading-relaxed max-w-[240px]"
+          style={{ color: "var(--color-ink-mute)" }}
+        >
+          {target.url}
+        </p>
+
+        {/* Actions */}
+        <div className="flex gap-2 w-full">
+          <Button
+            type="button"
+            variant="primary"
+            className="flex-1 flex items-center justify-center gap-1.5"
+            onClick={download}
+          >
+            <Download size={13} />
+            Download PNG
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            className="flex-1"
+            onClick={onClose}
+          >
+            Close
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Table Pill ───────────────────────────────────────────────────────────────
 
 function TablePill({
   table,
   restaurantId,
+  onQrClick,
 }: {
   table: TableRow;
   restaurantId: string;
+  onQrClick: (table: TableRow) => void;
 }) {
   const [, startToggle] = useTransition();
   const [, startDelete] = useTransition();
@@ -27,19 +131,16 @@ function TablePill({
       className="flex items-center gap-2 px-3 py-2 rounded-lg border text-sm"
       style={{
         background: "var(--color-canvas)",
-        borderColor: table.is_active ? "var(--color-hairline)" : "var(--color-hairline)",
+        borderColor: "var(--color-hairline)",
         opacity: table.is_active ? 1 : 0.5,
       }}
     >
       <span style={{ color: "var(--color-ink)", fontWeight: 400 }}>T{table.number}</span>
       <button
         type="button"
-        title="View QR"
+        title="Show QR code"
         style={{ color: "var(--color-ink-mute)" }}
-        onClick={() => {
-          const url = `${window.location.origin}/c/${table.qr_token}`;
-          window.open(url, "_blank");
-        }}
+        onClick={() => onQrClick(table)}
       >
         <QrCode size={13} />
       </button>
@@ -66,6 +167,8 @@ function TablePill({
     </div>
   );
 }
+
+// ─── Forms ────────────────────────────────────────────────────────────────────
 
 function AddTableForm({
   restaurantId,
@@ -132,94 +235,110 @@ function AddGroupForm({ restaurantId }: { restaurantId: string }) {
   );
 }
 
+// ─── Main Client ──────────────────────────────────────────────────────────────
+
 export function TablesClient({
   ungrouped,
   groups,
   restaurantId,
+  restaurantSlug,
 }: {
   ungrouped: TableRow[];
   groups: GroupWithTables[];
   restaurantId: string;
+  restaurantSlug: string;
 }) {
+  const [qrTarget, setQrTarget] = useState<QrTarget>(null);
   const totalTables = ungrouped.length + groups.reduce((n, g) => n + g.tables.length, 0);
 
+  function handleQrClick(table: TableRow) {
+    const url = restaurantSlug
+      ? `${window.location.origin}/c/${restaurantSlug}?table=${table.qr_token}`
+      : `${window.location.origin}/c?table=${table.qr_token}`;
+    setQrTarget({ table, url });
+  }
+
   return (
-    <div className="flex flex-col gap-8 max-w-2xl">
-      <p className="text-sm -mt-4" style={{ color: "var(--color-ink-mute)" }}>
-        {totalTables} tables total
-      </p>
+    <>
+      <QrModal target={qrTarget} onClose={() => setQrTarget(null)} />
 
-      {/* Groups */}
-      {groups.map((g) => (
-        <div key={g.id}>
-          <p
-            className="text-xs uppercase tracking-wide mb-3 font-medium"
-            style={{ color: "var(--color-ink-mute)", letterSpacing: "0.06em" }}
-          >
-            {g.name}
-          </p>
-          <div className="flex flex-wrap gap-2 mb-3">
-            {g.tables.map((t) => (
-              <TablePill key={t.id} table={t} restaurantId={restaurantId} />
-            ))}
-            {g.tables.length === 0 && (
-              <p className="text-xs" style={{ color: "var(--color-ink-mute)" }}>No tables in this group.</p>
-            )}
-          </div>
-          <AddTableForm restaurantId={restaurantId} groups={groups} defaultGroupId={g.id} />
-        </div>
-      ))}
+      <div className="flex flex-col gap-8 max-w-2xl">
+        <p className="text-sm -mt-4" style={{ color: "var(--color-ink-mute)" }}>
+          {totalTables} tables total
+        </p>
 
-      {/* Ungrouped */}
-      {(ungrouped.length > 0 || groups.length === 0) && (
-        <div>
-          {groups.length > 0 && (
+        {/* Groups */}
+        {groups.map((g) => (
+          <div key={g.id}>
             <p
               className="text-xs uppercase tracking-wide mb-3 font-medium"
               style={{ color: "var(--color-ink-mute)", letterSpacing: "0.06em" }}
             >
-              Ungrouped
+              {g.name}
             </p>
-          )}
-          <div className="flex flex-wrap gap-2 mb-3">
-            {ungrouped.map((t) => (
-              <TablePill key={t.id} table={t} restaurantId={restaurantId} />
-            ))}
-            {ungrouped.length === 0 && groups.length === 0 && (
-              <p className="text-sm" style={{ color: "var(--color-ink-mute)" }}>
-                No tables yet.
+            <div className="flex flex-wrap gap-2 mb-3">
+              {g.tables.map((t) => (
+                <TablePill key={t.id} table={t} restaurantId={restaurantId} onQrClick={handleQrClick} />
+              ))}
+              {g.tables.length === 0 && (
+                <p className="text-xs" style={{ color: "var(--color-ink-mute)" }}>No tables in this group.</p>
+              )}
+            </div>
+            <AddTableForm restaurantId={restaurantId} groups={groups} defaultGroupId={g.id} />
+          </div>
+        ))}
+
+        {/* Ungrouped */}
+        {(ungrouped.length > 0 || groups.length === 0) && (
+          <div>
+            {groups.length > 0 && (
+              <p
+                className="text-xs uppercase tracking-wide mb-3 font-medium"
+                style={{ color: "var(--color-ink-mute)", letterSpacing: "0.06em" }}
+              >
+                Ungrouped
               </p>
             )}
+            <div className="flex flex-wrap gap-2 mb-3">
+              {ungrouped.map((t) => (
+                <TablePill key={t.id} table={t} restaurantId={restaurantId} onQrClick={handleQrClick} />
+              ))}
+              {ungrouped.length === 0 && groups.length === 0 && (
+                <p className="text-sm" style={{ color: "var(--color-ink-mute)" }}>
+                  No tables yet.
+                </p>
+              )}
+            </div>
+            {groups.length === 0 && (
+              <AddTableForm restaurantId={restaurantId} groups={groups} />
+            )}
           </div>
-          {groups.length === 0 && (
+        )}
+
+        {/* Add table to ungrouped (when groups exist) */}
+        {groups.length > 0 && (
+          <div>
+            <p
+              className="text-xs uppercase tracking-wide mb-3 font-medium"
+              style={{ color: "var(--color-ink-mute)", letterSpacing: "0.06em" }}
+            >
+              Add table
+            </p>
             <AddTableForm restaurantId={restaurantId} groups={groups} />
-          )}
-        </div>
-      )}
+          </div>
+        )}
 
-      {/* Add table to ungrouped (when groups exist) */}
-      {groups.length > 0 && (
-        <div>
-          <p
-            className="text-xs uppercase tracking-wide mb-3 font-medium"
-            style={{ color: "var(--color-ink-mute)", letterSpacing: "0.06em" }}
-          >
-            Add table
+        {/* Add group */}
+        <div
+          className="rounded-xl border px-5 py-4"
+          style={{ background: "var(--color-canvas)", borderColor: "var(--color-hairline)" }}
+        >
+          <p className="text-sm font-medium mb-3" style={{ color: "var(--color-ink)" }}>
+            Add table group
           </p>
-          <AddTableForm restaurantId={restaurantId} groups={groups} />
+          <AddGroupForm restaurantId={restaurantId} />
         </div>
-      )}
-
-      {/* Add group */}
-      <div
-        className="rounded-xl border px-5 py-4"
-        style={{ background: "var(--color-canvas)", borderColor: "var(--color-hairline)" }}
-      >
-        <p className="text-sm font-medium mb-3" style={{ color: "var(--color-ink)" }}>
-          Add table group
-        </p>
-        <AddGroupForm restaurantId={restaurantId} />
       </div>
-    </div>
+    </>
   );
 }

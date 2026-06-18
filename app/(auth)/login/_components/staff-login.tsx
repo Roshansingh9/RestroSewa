@@ -1,12 +1,12 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { loginWithPin } from "@/app/actions/auth";
 import type { AuthResult, StaffMember } from "@/app/actions/auth";
 import { Button } from "@/components/ui/button";
 
+const PIN_LENGTH = 4;
 const KEYPAD = ["1","2","3","4","5","6","7","8","9","","0","⌫"] as const;
-const PIN_LENGTH = 6;
 
 function PinDots({ pin }: { pin: string }) {
   return (
@@ -81,6 +81,15 @@ export function StaffLogin({ staff }: { staff: StaffMember[] }) {
     null
   );
 
+  useEffect(() => {
+    if (state && "redirectTo" in state) {
+      window.location.replace(state.redirectTo);
+    }
+  }, [state]);
+
+  const isNavigating = !!(state && "redirectTo" in state);
+  const errorMsg = state && "error" in state ? state.error : null;
+
   function handleDigit(d: string) {
     setPin((p) => (p.length < PIN_LENGTH ? p + d : p));
   }
@@ -145,36 +154,35 @@ export function StaffLogin({ staff }: { staff: StaffMember[] }) {
         {selected.display_name}
       </p>
       <p className="text-xs" style={{ color: "var(--color-ink-mute)" }}>
-        Enter your PIN
+        Enter your 4-digit PIN
       </p>
 
       <PinDots pin={pin} />
 
-      {state?.error && (
+      {errorMsg && (
         <p
           className="text-sm rounded-md px-3 py-2 w-full text-center"
           style={{ color: "var(--color-ruby)", background: "#fff0f4" }}
         >
-          {state.error}
+          {errorMsg}
         </p>
       )}
 
       <Keypad onDigit={handleDigit} onBack={handleBack} />
 
-      <Button
-        type="button"
-        variant="primary"
-        className="w-full max-w-[240px] mt-4"
-        disabled={pin.length < 4 || pending}
-        onClick={() => {
-          const fd = new FormData();
-          fd.set("restaurant_user_id", selected.id);
-          fd.set("pin", pin);
-          dispatch(fd);
-        }}
-      >
-        {pending ? "Verifying…" : "Sign in"}
-      </Button>
+      {/* Hidden form carries the data; React handles the transition via form action */}
+      <form action={dispatch} className="w-full max-w-[240px] mt-4">
+        <input type="hidden" name="restaurant_user_id" value={selected.id} />
+        <input type="hidden" name="pin" value={pin} />
+        <Button
+          type="submit"
+          variant="primary"
+          className="w-full"
+          disabled={pin.length !== PIN_LENGTH || pending || isNavigating}
+        >
+          {pending || isNavigating ? "Verifying…" : "Sign in"}
+        </Button>
+      </form>
     </div>
   );
 }

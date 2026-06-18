@@ -25,9 +25,7 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: { user }, error } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
 
@@ -37,7 +35,10 @@ export async function proxy(request: NextRequest) {
   const isSuperAdminProtected =
     pathname.startsWith("/superadmin") && pathname !== "/superadmin/login";
 
-  if (!user) {
+  // Only redirect when we're certain there is no session.
+  // If getUser() returned an error (network/transient failure), pass through —
+  // the page-level guards will enforce auth correctly on the next render.
+  if (!error && !user) {
     if (isTenantProtected) {
       return NextResponse.redirect(new URL("/login", request.url));
     }
