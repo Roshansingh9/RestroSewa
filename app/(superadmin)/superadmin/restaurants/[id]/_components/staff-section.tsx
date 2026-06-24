@@ -140,7 +140,7 @@ function StaffCard({
           startDelete(async () => {
             if (confirm(`Remove ${s.display_name} from this restaurant? They will lose access immediately.`)) {
               const r = await softDeleteStaffMember(s.id, s.auth_user_id, restaurantId);
-              if (r?.error) alert(r.error);
+              if (r && 'error' in r) alert(r.error);
             }
           })
         }
