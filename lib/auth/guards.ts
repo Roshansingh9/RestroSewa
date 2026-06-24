@@ -108,6 +108,7 @@ export async function requireRestaurantAdmin() {
     .eq("auth_user_id", user.id)
     .eq("role", "restaurant_admin")
     .eq("is_active", true)
+    .is("deleted_at", null)
     .maybeSingle();
 
   if (!ru) redirect("/login");

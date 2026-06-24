@@ -7,18 +7,27 @@ import {
   updateTable,
   toggleTableStatus,
   deleteTable,
+  regenerateTableQr,
 } from "@/app/actions/tables-admin";
 import type { ActionResult, GroupWithTables, TableRow } from "@/app/actions/tables-admin";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { QrCode, Trash2, X, Download, Pencil } from "lucide-react";
+import { QrCode, Trash2, X, Download, Pencil, RefreshCw } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 
 // ─── QR Modal ─────────────────────────────────────────────────────────────────
 
 type QrTarget = { table: TableRow; url: string } | null;
 
-function QrModal({ target, onClose }: { target: QrTarget; onClose: () => void }) {
+function QrModal({
+  target,
+  onClose,
+  onRegenerate,
+}: {
+  target: QrTarget;
+  onClose: () => void;
+  onRegenerate: (tableId: string) => void;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -99,6 +108,20 @@ function QrModal({ target, onClose }: { target: QrTarget; onClose: () => void })
             Close
           </Button>
         </div>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 text-xs"
+          style={{ color: "var(--color-ink-mute)" }}
+          onClick={() => {
+            if (confirm("Regenerate QR code? All printed QR codes for this table will stop working.")) {
+              onRegenerate(target!.table.id);
+              onClose();
+            }
+          }}
+        >
+          <RefreshCw size={11} />
+          Regenerate QR code
+        </button>
       </div>
     </div>
   );
@@ -325,6 +348,7 @@ export function TablesClient({
   restaurantSlug: string;
 }) {
   const [qrTarget, setQrTarget] = useState<QrTarget>(null);
+  const [, startRegen] = useTransition();
   const totalTables = ungrouped.length + groups.reduce((n, g) => n + g.tables.length, 0);
 
   function handleQrClick(table: TableRow) {
@@ -334,9 +358,16 @@ export function TablesClient({
     setQrTarget({ table, url });
   }
 
+  function handleRegenerate(tableId: string) {
+    startRegen(async () => {
+      const r = await regenerateTableQr(tableId);
+      if (r?.error) alert(r.error);
+    });
+  }
+
   return (
     <>
-      <QrModal target={qrTarget} onClose={() => setQrTarget(null)} />
+      <QrModal target={qrTarget} onClose={() => setQrTarget(null)} onRegenerate={handleRegenerate} />
 
       <div className="flex flex-col gap-8 max-w-2xl">
         <p className="text-sm -mt-4" style={{ color: "var(--color-ink-mute)" }}>

@@ -117,6 +117,7 @@ export async function sendNotification(
     table_id: tableId,
     session_id: sessionId,
     type,
+    status: "new",
   });
 
   revalidatePath("/employee/queue");

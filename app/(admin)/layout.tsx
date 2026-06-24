@@ -1,9 +1,10 @@
-import { requireRestaurantAdmin } from "@/lib/auth/guards";
+import { requireRestaurantStaff } from "@/lib/auth/guards";
 import { createServiceClient } from "@/lib/supabase/service";
 import { AdminSidebar } from "./admin/_components/admin-sidebar";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { restaurantUser } = await requireRestaurantAdmin();
+  // Layout allows any active staff member — individual pages guard their own permissions.
+  const { restaurantUser } = await requireRestaurantStaff();
 
   const service = createServiceClient();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

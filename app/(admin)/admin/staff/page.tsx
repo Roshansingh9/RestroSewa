@@ -1,4 +1,5 @@
-import { requireRestaurantAdmin } from "@/lib/auth/guards";
+import { requireAdminOrPermission } from "@/lib/auth/guards";
+import { PERMISSIONS } from "@/lib/permissions";
 import { createServiceClient } from "@/lib/supabase/service";
 type StaffRow = {
   id: string;
@@ -7,18 +8,20 @@ type StaffRow = {
   role: string;
   is_active: boolean;
   auth_user_id: string | null;
+  permissions: string[];
 };
 
 export default async function AdminStaffPage() {
-  const { restaurantUser } = await requireRestaurantAdmin();
+  const { restaurantUser } = await requireAdminOrPermission(PERMISSIONS.VIEW_STAFF);
   const { restaurant_id } = restaurantUser;
 
   const service = createServiceClient();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: staff } = await (service as any)
     .from("restaurant_users")
-    .select("id, display_name, title, role, is_active, auth_user_id")
+    .select("id, display_name, title, role, is_active, auth_user_id, permissions")
     .eq("restaurant_id", restaurant_id)
+    .is("deleted_at", null)
     .order("role")
     .order("display_name");
 

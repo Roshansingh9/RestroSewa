@@ -184,6 +184,28 @@ export async function deleteTable(id: string): Promise<ActionResult> {
   return null;
 }
 
+export async function regenerateTableQr(tableId: string): Promise<ActionResult> {
+  const ru = await getRestaurantUser();
+  if (!hasPermission(ru, PERMISSIONS.MANAGE_TABLES)) return { error: "Permission denied." };
+  const service = createServiceClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: existing } = await (service as any)
+    .from("restaurant_tables")
+    .select("restaurant_id")
+    .eq("id", tableId)
+    .maybeSingle();
+  if (!existing || existing.restaurant_id !== ru.restaurant_id)
+    return { error: "Permission denied." };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (service as any)
+    .from("restaurant_tables")
+    .update({ qr_token: crypto.randomUUID() })
+    .eq("id", tableId);
+  if (error) return { error: error.message };
+  revalidatePath("/admin/tables");
+  return null;
+}
+
 export async function getRestaurantSlug(restaurantId: string): Promise<string | null> {
   const service = createServiceClient();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

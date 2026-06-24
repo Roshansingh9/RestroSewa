@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   BookOpen,
   LayoutGrid,
+  DoorOpen,
   Zap,
   Users,
   LogOut,
@@ -17,6 +18,7 @@ const NAV = [
   { label: "Dashboard",    href: "/admin/dashboard",     icon: LayoutDashboard, exact: true },
   { label: "Menu",         href: "/admin/menu",           icon: BookOpen,        exact: false },
   { label: "Tables",       href: "/admin/tables",         icon: LayoutGrid,      exact: false },
+  { label: "Rooms",        href: "/admin/rooms",          icon: DoorOpen,        exact: false },
   { label: "Workstations", href: "/admin/workstations",   icon: Zap,             exact: false },
   { label: "Staff",        href: "/admin/staff",          icon: Users,           exact: false },
 ];

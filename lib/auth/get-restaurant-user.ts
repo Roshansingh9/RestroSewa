@@ -23,6 +23,7 @@ export async function getRestaurantUser(): Promise<RestaurantUserCtx> {
     .select("id, restaurant_id, role, permissions")
     .eq("auth_user_id", user.id)
     .eq("is_active", true)
+    .is("deleted_at", null)
     .maybeSingle();
 
   if (!ru) redirect("/login");
