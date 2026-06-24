@@ -1,5 +1,6 @@
 import { requireRestaurantStaff } from "@/lib/auth/guards";
 import { createServiceClient } from "@/lib/supabase/service";
+import { getNotificationCount } from "@/app/actions/notifications";
 import { StaffNav } from "./employee/_components/staff-nav";
 
 export default async function EmployeeLayout({ children }: { children: React.ReactNode }) {
@@ -13,11 +14,14 @@ export default async function EmployeeLayout({ children }: { children: React.Rea
     .eq("id", restaurantUser.restaurant_id)
     .single();
 
+  const notificationCount = await getNotificationCount(restaurantUser.restaurant_id);
+
   return (
     <div className="min-h-screen" style={{ background: "var(--color-canvas-soft)" }}>
       <StaffNav
         restaurantName={restaurant?.name ?? "Restaurant"}
         displayName={restaurantUser.display_name}
+        notificationCount={notificationCount}
       />
       <main>{children}</main>
     </div>

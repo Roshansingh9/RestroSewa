@@ -1,16 +1,17 @@
 "use client";
 
-import { useActionState, useTransition, useState, useRef, useEffect } from "react";
+import { useActionState, useTransition, useState, useEffect, useRef } from "react";
 import {
   createTableGroup,
   createTable,
+  updateTable,
   toggleTableStatus,
   deleteTable,
 } from "@/app/actions/tables-admin";
 import type { ActionResult, GroupWithTables, TableRow } from "@/app/actions/tables-admin";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { QrCode, Trash2, X, Download } from "lucide-react";
+import { QrCode, Trash2, X, Download, Pencil } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 
 // ─── QR Modal ─────────────────────────────────────────────────────────────────
@@ -50,7 +51,6 @@ function QrModal({ target, onClose }: { target: QrTarget; onClose: () => void })
         style={{ background: "var(--color-canvas)", boxShadow: "0 16px 48px rgba(0,0,0,0.18)" }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex items-center justify-between w-full">
           <p className="font-medium text-base" style={{ color: "var(--color-ink)" }}>
             Table {target.table.number}
@@ -65,7 +65,6 @@ function QrModal({ target, onClose }: { target: QrTarget; onClose: () => void })
           </button>
         </div>
 
-        {/* QR Code */}
         <div
           className="p-3 rounded-xl"
           style={{ background: "#ffffff", border: "1px solid var(--color-hairline)" }}
@@ -79,7 +78,6 @@ function QrModal({ target, onClose }: { target: QrTarget; onClose: () => void })
           />
         </div>
 
-        {/* URL */}
         <p
           className="text-xs text-center break-all leading-relaxed max-w-[240px]"
           style={{ color: "var(--color-ink-mute)" }}
@@ -87,7 +85,6 @@ function QrModal({ target, onClose }: { target: QrTarget; onClose: () => void })
           {target.url}
         </p>
 
-        {/* Actions */}
         <div className="flex gap-2 w-full">
           <Button
             type="button"
@@ -98,12 +95,7 @@ function QrModal({ target, onClose }: { target: QrTarget; onClose: () => void })
             <Download size={13} />
             Download PNG
           </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            className="flex-1"
-            onClick={onClose}
-          >
+          <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>
             Close
           </Button>
         </div>
@@ -116,15 +108,89 @@ function QrModal({ target, onClose }: { target: QrTarget; onClose: () => void })
 
 function TablePill({
   table,
-  restaurantId,
+  groups,
   onQrClick,
 }: {
   table: TableRow;
-  restaurantId: string;
+  groups: GroupWithTables[];
   onQrClick: (table: TableRow) => void;
 }) {
+  const [editing, setEditing] = useState(false);
   const [, startToggle] = useTransition();
   const [, startDelete] = useTransition();
+  const [editState, editAction, editPending] = useActionState<ActionResult, FormData>(
+    updateTable,
+    null
+  );
+  const [editSubmitted, setEditSubmitted] = useState(false);
+
+  useEffect(() => { if (editPending) setEditSubmitted(true); }, [editPending]);
+  useEffect(() => {
+    if (editSubmitted && !editPending && editState === null) {
+      setEditSubmitted(false);
+      setEditing(false);
+    }
+  }, [editSubmitted, editPending, editState]);
+
+  if (editing) {
+    return (
+      <form
+        action={editAction}
+        className="flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm flex-wrap"
+        style={{
+          borderColor: "var(--color-primary)",
+          borderWidth: 1.5,
+          background: "var(--color-canvas)",
+        }}
+      >
+        <input type="hidden" name="id" value={table.id} />
+        <Input
+          name="number"
+          defaultValue={table.number}
+          required
+          className="w-16 h-7 text-xs px-2"
+          placeholder="No."
+        />
+        {groups.length > 0 && (
+          <select
+            name="group_id"
+            defaultValue={table.group_id ?? ""}
+            className="h-7 rounded border px-1.5 text-xs"
+            style={{
+              borderColor: "var(--color-hairline-input)",
+              color: "var(--color-ink)",
+              background: "var(--color-canvas)",
+            }}
+          >
+            <option value="">No group</option>
+            {groups.map((g) => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
+        )}
+        <button
+          type="submit"
+          disabled={editPending}
+          className="text-xs px-2 py-1 rounded font-medium"
+          style={{ background: "var(--color-primary)", color: "#fff" }}
+        >
+          {editPending ? "…" : "Save"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setEditing(false)}
+          style={{ color: "var(--color-ink-mute)" }}
+        >
+          <X size={12} />
+        </button>
+        {editState?.error && (
+          <p className="text-xs w-full" style={{ color: "var(--color-ruby)" }}>
+            {editState.error}
+          </p>
+        )}
+      </form>
+    );
+  }
 
   return (
     <div
@@ -146,6 +212,14 @@ function TablePill({
       </button>
       <button
         type="button"
+        title="Edit table"
+        style={{ color: "var(--color-ink-mute)" }}
+        onClick={() => setEditing(true)}
+      >
+        <Pencil size={12} />
+      </button>
+      <button
+        type="button"
         className="text-xs"
         style={{ color: table.is_active ? "#1a7a4a" : "var(--color-ink-mute)" }}
         onClick={() => startToggle(async () => { await toggleTableStatus(table.id, !table.is_active); })}
@@ -155,12 +229,14 @@ function TablePill({
       <button
         type="button"
         style={{ color: "var(--color-ink-mute)" }}
-        onClick={() => startDelete(async () => {
-          if (confirm(`Delete table ${table.number}?`)) {
-            const r = await deleteTable(table.id);
-            if (r?.error) alert(r.error);
-          }
-        })}
+        onClick={() =>
+          startDelete(async () => {
+            if (confirm(`Delete table ${table.number}?`)) {
+              const r = await deleteTable(table.id);
+              if (r?.error) alert(r.error);
+            }
+          })
+        }
       >
         <Trash2 size={12} />
       </button>
@@ -278,7 +354,7 @@ export function TablesClient({
             </p>
             <div className="flex flex-wrap gap-2 mb-3">
               {g.tables.map((t) => (
-                <TablePill key={t.id} table={t} restaurantId={restaurantId} onQrClick={handleQrClick} />
+                <TablePill key={t.id} table={t} groups={groups} onQrClick={handleQrClick} />
               ))}
               {g.tables.length === 0 && (
                 <p className="text-xs" style={{ color: "var(--color-ink-mute)" }}>No tables in this group.</p>
@@ -301,7 +377,7 @@ export function TablesClient({
             )}
             <div className="flex flex-wrap gap-2 mb-3">
               {ungrouped.map((t) => (
-                <TablePill key={t.id} table={t} restaurantId={restaurantId} onQrClick={handleQrClick} />
+                <TablePill key={t.id} table={t} groups={groups} onQrClick={handleQrClick} />
               ))}
               {ungrouped.length === 0 && groups.length === 0 && (
                 <p className="text-sm" style={{ color: "var(--color-ink-mute)" }}>

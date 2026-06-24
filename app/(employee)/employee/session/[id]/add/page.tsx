@@ -39,7 +39,7 @@ export default async function AddItemsPage({
   const itemsByCategory = await Promise.all(
     activeCategories.map((c) => getMenuItemsByCategory(restaurant_id, c.id))
   );
-  const allItems: MenuItemRow[] = itemsByCategory.flat().filter((i) => i.is_available);
+  const allItems: MenuItemRow[] = itemsByCategory.flat().filter((i) => i.availability_status === "available");
 
   return (
     <div className="flex flex-col h-[calc(100vh-56px)]">

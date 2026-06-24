@@ -1,9 +1,10 @@
-import { requireRestaurantAdmin } from "@/lib/auth/guards";
+import { requireAdminOrPermission } from "@/lib/auth/guards";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getTablesWithGroups, getRestaurantSlug } from "@/app/actions/tables-admin";
 import { TablesClient } from "./_components/tables-client";
 
 export default async function TablesPage() {
-  const { restaurantUser } = await requireRestaurantAdmin();
+  const { restaurantUser } = await requireAdminOrPermission(PERMISSIONS.MANAGE_TABLES);
   const [{ ungrouped, groups }, restaurantSlug] = await Promise.all([
     getTablesWithGroups(restaurantUser.restaurant_id),
     getRestaurantSlug(restaurantUser.restaurant_id),

@@ -2,6 +2,8 @@
 
 import { createServiceClient } from "@/lib/supabase/service";
 import { revalidatePath } from "next/cache";
+import { getRestaurantUser } from "@/lib/auth/get-restaurant-user";
+import { hasPermission, PERMISSIONS } from "@/lib/permissions";
 
 export type ActionResult = { error: string } | null;
 
@@ -52,7 +54,11 @@ export async function createTableGroup(
   _prevState: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
+  const ru = await getRestaurantUser();
+  if (!hasPermission(ru, PERMISSIONS.MANAGE_TABLES)) return { error: "Permission denied." };
+
   const restaurantId = formData.get("restaurant_id") as string;
+  if (restaurantId !== ru.restaurant_id) return { error: "Permission denied." };
   const name = (formData.get("name") as string)?.trim();
   if (!name) return { error: "Name is required." };
 
@@ -71,13 +77,37 @@ export async function createTable(
   _prevState: ActionResult,
   formData: FormData
 ): Promise<ActionResult> {
+  const ru = await getRestaurantUser();
+  if (!hasPermission(ru, PERMISSIONS.MANAGE_TABLES)) return { error: "Permission denied." };
+
   const restaurantId = formData.get("restaurant_id") as string;
+  if (restaurantId !== ru.restaurant_id) return { error: "Permission denied." };
   const number = (formData.get("number") as string)?.trim();
   const groupId = (formData.get("group_id") as string) || null;
 
   if (!number) return { error: "Table number/name is required." };
 
   const service = createServiceClient();
+
+  // Enforce max_tables resource limit
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: restaurant } = await (service as any)
+    .from("restaurants")
+    .select("max_tables")
+    .eq("id", restaurantId)
+    .maybeSingle();
+
+  if (restaurant?.max_tables != null) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { count } = await (service as any)
+      .from("restaurant_tables")
+      .select("id", { count: "exact", head: true })
+      .eq("restaurant_id", restaurantId);
+    if ((count ?? 0) >= restaurant.max_tables) {
+      return { error: `Table limit reached — subscription allows ${restaurant.max_tables} tables.` };
+    }
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (service as any)
     .from("restaurant_tables")
@@ -91,7 +121,46 @@ export async function createTable(
   return null;
 }
 
+export async function updateTable(
+  _prevState: ActionResult,
+  formData: FormData
+): Promise<ActionResult> {
+  const ru = await getRestaurantUser();
+  if (!hasPermission(ru, PERMISSIONS.MANAGE_TABLES)) return { error: "Permission denied." };
+
+  const id = formData.get("id") as string;
+  const number = (formData.get("number") as string)?.trim();
+  const groupId = (formData.get("group_id") as string) || null;
+
+  if (!number) return { error: "Table number/name is required." };
+
+  const service = createServiceClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: existing } = await (service as any)
+    .from("restaurant_tables")
+    .select("restaurant_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (!existing || existing.restaurant_id !== ru.restaurant_id)
+    return { error: "Permission denied." };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (service as any)
+    .from("restaurant_tables")
+    .update({ number, group_id: groupId || null })
+    .eq("id", id);
+
+  if (error) {
+    if (error.code === "23505") return { error: "A table with that number already exists." };
+    return { error: error.message };
+  }
+  revalidatePath("/admin/tables");
+  return null;
+}
+
 export async function toggleTableStatus(id: string, isActive: boolean) {
+  const ru = await getRestaurantUser();
+  if (!hasPermission(ru, PERMISSIONS.MANAGE_TABLES)) return;
   const service = createServiceClient();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await (service as any)
@@ -102,6 +171,8 @@ export async function toggleTableStatus(id: string, isActive: boolean) {
 }
 
 export async function deleteTable(id: string): Promise<ActionResult> {
+  const ru = await getRestaurantUser();
+  if (!hasPermission(ru, PERMISSIONS.MANAGE_TABLES)) return { error: "Permission denied." };
   const service = createServiceClient();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (service as any)

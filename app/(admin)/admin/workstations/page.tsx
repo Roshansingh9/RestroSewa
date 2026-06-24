@@ -1,9 +1,10 @@
-import { requireRestaurantAdmin } from "@/lib/auth/guards";
+import { requireAdminOrPermission } from "@/lib/auth/guards";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getWorkstations } from "@/app/actions/workstations";
 import { WorkstationsClient } from "./_components/workstations-client";
 
 export default async function WorkstationsPage() {
-  const { restaurantUser } = await requireRestaurantAdmin();
+  const { restaurantUser } = await requireAdminOrPermission(PERMISSIONS.MANAGE_TABLES);
   const workstations = await getWorkstations(restaurantUser.restaurant_id);
 
   return (

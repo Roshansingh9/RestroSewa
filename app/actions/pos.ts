@@ -1,10 +1,10 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { hasPermission, PERMISSIONS } from "@/lib/permissions";
+import { getRestaurantUser } from "@/lib/auth/get-restaurant-user";
 
 export type ActionResult = { error: string } | null;
 
@@ -36,6 +36,7 @@ export type SessionDetail = {
   status: string;
   table_number: string | null;
   opened_at: string;
+  customer_pin: string | null;
   items: OrderItemRow[];
   total: number;
 };
@@ -57,29 +58,6 @@ export type CartItem = {
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-type RUContext = { id: string; restaurant_id: string; role: string; permissions: string[] };
-
-async function getRestaurantUser(): Promise<RUContext> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-
-  const service = createServiceClient();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: ru } = await (service as any)
-    .from("restaurant_users")
-    .select("id, restaurant_id, role, permissions")
-    .eq("auth_user_id", user.id)
-    .single();
-
-  if (!ru) redirect("/login");
-  const ctx = ru as RUContext;
-  if (!Array.isArray(ctx.permissions)) ctx.permissions = [];
-  return ctx;
-}
 
 // ─── Table Status Overview ────────────────────────────────────────────────────
 
@@ -147,7 +125,8 @@ export async function openTableSession(tableId: string) {
     redirect(`/employee/session/${existing.id}`);
   }
 
-  // Create new session
+  // Create new session with a customer ordering PIN
+  const customer_pin = String(Math.floor(1000 + Math.random() * 9000));
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: session, error } = await (service as any)
     .from("sessions")
@@ -155,6 +134,7 @@ export async function openTableSession(tableId: string) {
       restaurant_id: ru.restaurant_id,
       type: "table",
       table_id: tableId,
+      customer_pin,
     })
     .select("id")
     .single();
@@ -167,12 +147,14 @@ export async function openWalkInSession() {
   const ru = await getRestaurantUser();
   const service = createServiceClient();
 
+  const customer_pin = String(Math.floor(1000 + Math.random() * 9000));
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: session, error } = await (service as any)
     .from("sessions")
     .insert({
       restaurant_id: ru.restaurant_id,
       type: "walk_in",
+      customer_pin,
     })
     .select("id")
     .single();
@@ -191,7 +173,7 @@ export async function getSessionDetail(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: session } = await (service as any)
     .from("sessions")
-    .select(`id, type, status, opened_at, table_id, restaurant_tables ( number )`)
+    .select(`id, type, status, opened_at, customer_pin, table_id, restaurant_tables ( number )`)
     .eq("id", sessionId)
     .maybeSingle();
 
@@ -230,6 +212,8 @@ export async function getSessionDetail(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     table_number: (session as any).restaurant_tables?.number ?? null,
     opened_at: session.opened_at,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    customer_pin: (session as any).customer_pin ?? null,
     items,
     total,
   };
@@ -361,6 +345,64 @@ export async function closeSessionWithPayment(
     .eq("id", sessionId);
 
   redirect("/employee/dashboard");
+}
+
+// ─── Customer PIN Management (Super Admin) ────────────────────────────────────
+
+export type ActiveSessionPin = {
+  id: string;
+  type: string;
+  customer_pin: string | null;
+  opened_at: string;
+  table_number: string | null;
+};
+
+export async function getActiveSessionsWithPins(
+  restaurantId: string
+): Promise<ActiveSessionPin[]> {
+  const service = createServiceClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data } = await (service as any)
+    .from("sessions")
+    .select("id, type, customer_pin, opened_at, restaurant_tables ( number )")
+    .eq("restaurant_id", restaurantId)
+    .eq("status", "active")
+    .order("opened_at", { ascending: false });
+
+  if (!data) return [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data as any[]).map((s) => ({
+    id: s.id,
+    type: s.type,
+    customer_pin: s.customer_pin,
+    opened_at: s.opened_at,
+    table_number: s.restaurant_tables?.number ?? null,
+  }));
+}
+
+export async function regenerateSessionPin(sessionId: string): Promise<ActionResult> {
+  const service = createServiceClient();
+  const new_pin = String(Math.floor(1000 + Math.random() * 9000));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (service as any)
+    .from("sessions")
+    .update({ customer_pin: new_pin })
+    .eq("id", sessionId);
+  if (error) return { error: "Failed to regenerate PIN." };
+  revalidatePath("/superadmin/restaurants");
+  return null;
+}
+
+export async function clearSessionPin(sessionId: string): Promise<ActionResult> {
+  const service = createServiceClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (service as any)
+    .from("sessions")
+    .update({ customer_pin: null })
+    .eq("id", sessionId);
+  if (error) return { error: "Failed to clear PIN." };
+  revalidatePath("/superadmin/restaurants");
+  return null;
 }
 
 // ─── Workstation Queue ────────────────────────────────────────────────────────

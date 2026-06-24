@@ -305,6 +305,30 @@ export function SessionClient({
 
   return (
     <div className="flex flex-col gap-5 max-w-lg">
+      {/* Customer ordering PIN */}
+      {!isClosed && session.customer_pin && (
+        <div
+          className="flex items-center gap-3 px-4 py-3 rounded-xl border"
+          style={{ background: "#fef9c3", borderColor: "#ca8a0444" }}
+        >
+          <div className="flex-1">
+            <p className="text-xs font-medium" style={{ color: "#854d0e" }}>
+              Customer ordering PIN — share with seated customer
+            </p>
+          </div>
+          <div className="flex items-center gap-1">
+            {session.customer_pin.split("").map((d, i) => (
+              <div
+                key={i}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-base font-bold"
+                style={{ background: "#fff", color: "#854d0e", border: "1px solid #ca8a0444" }}
+              >
+                {d}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {/* Items */}
       {session.items.length === 0 ? (
         <div

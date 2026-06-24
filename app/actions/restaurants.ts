@@ -16,6 +16,13 @@ export type RestaurantRow = {
   max_tables: number | null;
   max_rooms: number | null;
   created_at: string;
+  logo_url: string | null;
+  pan_vat_number: string | null;
+  address: string | null;
+  contact_phone: string | null;
+  contact_email: string | null;
+  customer_ordering_enabled: boolean;
+  qr_mode: string;
 };
 
 export type RestaurantDetail = RestaurantRow & { settings: Record<string, unknown> };
@@ -36,7 +43,7 @@ export async function getAllRestaurants(): Promise<RestaurantRow[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = await (service as any)
     .from("restaurants")
-    .select("id, name, slug, type, is_active, subscription_tier, max_tables, max_rooms, created_at")
+    .select("id, name, slug, type, is_active, subscription_tier, max_tables, max_rooms, logo_url, pan_vat_number, address, contact_phone, contact_email, customer_ordering_enabled, qr_mode, created_at")
     .order("created_at", { ascending: false });
 
   return (data as RestaurantRow[]) ?? [];
@@ -50,7 +57,7 @@ export async function getRestaurantWithStaff(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: restaurant } = await (service as any)
     .from("restaurants")
-    .select("id, name, slug, type, is_active, subscription_tier, max_tables, max_rooms, settings, created_at")
+    .select("id, name, slug, type, is_active, subscription_tier, max_tables, max_rooms, logo_url, pan_vat_number, address, contact_phone, contact_email, customer_ordering_enabled, qr_mode, settings, created_at")
     .eq("id", id)
     .maybeSingle();
 
@@ -133,4 +140,62 @@ export async function toggleRestaurantStatus(id: string, makeActive: boolean) {
 
   revalidatePath(`/superadmin/restaurants/${id}`);
   revalidatePath("/superadmin/dashboard");
+}
+
+export async function updateRestaurant(
+  _prevState: ActionResult,
+  formData: FormData
+): Promise<ActionResult> {
+  const id = formData.get("id") as string;
+  if (!id) return { error: "Invalid request." };
+
+  const name = (formData.get("name") as string)?.trim();
+  if (!name) return { error: "Business name is required." };
+
+  const tier = formData.get("subscription_tier") as string;
+  const maxTablesRaw = formData.get("max_tables") as string | null;
+  const maxRoomsRaw = formData.get("max_rooms") as string | null;
+  const logoUrl = (formData.get("logo_url") as string)?.trim() || null;
+  const panVat = (formData.get("pan_vat_number") as string)?.trim() || null;
+  const address = (formData.get("address") as string)?.trim() || null;
+  const contactPhone = (formData.get("contact_phone") as string)?.trim() || null;
+  const contactEmail = (formData.get("contact_email") as string)?.trim() || null;
+  const orderingEnabled = formData.get("customer_ordering_enabled") === "true";
+  const qrMode = formData.get("qr_mode") as string || "ordering_enabled";
+  const isActive = formData.get("is_active") === "true";
+
+  const validTiers = ["free", "basic", "pro"];
+  if (!validTiers.includes(tier)) return { error: "Invalid subscription tier." };
+
+  const validQrModes = ["ordering_enabled", "view_only"];
+  if (!validQrModes.includes(qrMode)) return { error: "Invalid QR mode." };
+
+  const maxTables = maxTablesRaw ? parseInt(maxTablesRaw, 10) : null;
+  const maxRooms = maxRoomsRaw ? parseInt(maxRoomsRaw, 10) : null;
+
+  const service = createServiceClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (service as any)
+    .from("restaurants")
+    .update({
+      name,
+      logo_url: logoUrl,
+      pan_vat_number: panVat,
+      address,
+      contact_phone: contactPhone,
+      contact_email: contactEmail,
+      subscription_tier: tier,
+      max_tables: maxTables,
+      max_rooms: maxRooms,
+      customer_ordering_enabled: orderingEnabled,
+      qr_mode: qrMode,
+      is_active: isActive,
+    })
+    .eq("id", id);
+
+  if (error) return { error: error.message };
+
+  revalidatePath(`/superadmin/restaurants/${id}`);
+  revalidatePath("/superadmin/dashboard");
+  return null;
 }

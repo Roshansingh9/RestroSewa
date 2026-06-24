@@ -130,3 +130,98 @@ export async function deleteStaffMember(
 
   redirect(`/superadmin/restaurants/${restaurantId}`);
 }
+
+export async function toggleStaffStatus(
+  staffId: string,
+  authUserId: string | null,
+  isActive: boolean,
+  restaurantId: string
+): Promise<ActionResult> {
+  const service = createServiceClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (service as any)
+    .from("restaurant_users")
+    .update({ is_active: isActive })
+    .eq("id", staffId);
+
+  if (error) return { error: "Failed to update staff status." };
+
+  if (authUserId) {
+    const admin = createAdminClient();
+    await admin.auth.admin.updateUserById(authUserId, {
+      ban_duration: isActive ? "none" : "876600h",
+    });
+  }
+
+  revalidatePath(`/superadmin/restaurants/${restaurantId}`);
+  return null;
+}
+
+export async function softDeleteStaffMember(
+  staffId: string,
+  authUserId: string | null,
+  restaurantId: string
+): Promise<ActionResult> {
+  const service = createServiceClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (service as any)
+    .from("restaurant_users")
+    .update({ is_active: false, deleted_at: new Date().toISOString() })
+    .eq("id", staffId);
+
+  if (error) return { error: "Failed to delete staff member." };
+
+  if (authUserId) {
+    const admin = createAdminClient();
+    await admin.auth.admin.updateUserById(authUserId, { ban_duration: "876600h" });
+  }
+
+  revalidatePath(`/superadmin/restaurants/${restaurantId}`);
+  return null;
+}
+
+export async function updateStaffMember(
+  _prevState: ActionResult,
+  formData: FormData
+): Promise<ActionResult> {
+  const staffId      = formData.get("staff_id") as string;
+  const restaurantId = formData.get("restaurant_id") as string;
+  const authUserId   = (formData.get("auth_user_id") as string) || null;
+  const displayName  = (formData.get("display_name") as string)?.trim();
+  const title        = (formData.get("title") as string)?.trim() || null;
+  const role         = formData.get("role") as string;
+  const permissions  = parsePermissions(formData.get("permissions") as string | null);
+  const newPin       = (formData.get("new_pin") as string)?.trim() || null;
+
+  if (!staffId || !restaurantId) return { error: "Invalid request." };
+  if (!displayName) return { error: "Name is required." };
+  if (!["restaurant_admin", "restaurant_employee"].includes(role))
+    return { error: "Invalid role." };
+  if (newPin && !PIN_REGEX.test(newPin))
+    return { error: "PIN must be exactly 4 digits." };
+
+  const service = createServiceClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (service as any)
+    .from("restaurant_users")
+    .update({
+      display_name: displayName,
+      title,
+      role,
+      permissions: role === "restaurant_employee" ? permissions : [],
+    })
+    .eq("id", staffId);
+
+  if (error) return { error: "Failed to update staff member." };
+
+  if (newPin && authUserId) {
+    const admin = createAdminClient();
+    const { error: pinErr } = await admin.auth.admin.updateUserById(authUserId, {
+      password: newPin,
+    });
+    if (pinErr) return { error: `Staff details saved but PIN update failed: ${pinErr.message}` };
+  }
+
+  revalidatePath(`/superadmin/restaurants/${restaurantId}`);
+  return null;
+}

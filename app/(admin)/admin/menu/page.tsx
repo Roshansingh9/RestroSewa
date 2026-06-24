@@ -1,4 +1,5 @@
-import { requireRestaurantAdmin } from "@/lib/auth/guards";
+import { requireAdminOrPermission } from "@/lib/auth/guards";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getMenuCategories, getMenuItemsByCategory } from "@/app/actions/menu";
 import { getWorkstations } from "@/app/actions/workstations";
 import { MenuClient } from "./_components/menu-client";
@@ -6,7 +7,7 @@ import type { MenuItemRow } from "@/app/actions/menu";
 import Link from "next/link";
 
 export default async function MenuPage() {
-  const { restaurantUser } = await requireRestaurantAdmin();
+  const { restaurantUser } = await requireAdminOrPermission(PERMISSIONS.MANAGE_MENU);
   const { restaurant_id } = restaurantUser;
 
   const [categories, workstations] = await Promise.all([

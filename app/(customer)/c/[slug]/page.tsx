@@ -4,6 +4,29 @@ import { getMenuCategories, getMenuItemsByCategory } from "@/app/actions/menu";
 import type { MenuItemRow } from "@/app/actions/menu";
 import { CustomerMenu } from "./_components/customer-menu";
 
+function isItemAvailableNow(item: MenuItemRow): boolean {
+  if (item.availability_status !== "available") return false;
+  if (item.is_deleted) return false;
+
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const todayStr = now.toISOString().split("T")[0];
+
+  if (item.available_days?.length && !item.available_days.includes(dayOfWeek)) return false;
+
+  if (item.time_from && item.time_until) {
+    const [fh, fm] = item.time_from.split(":").map(Number);
+    const [uh, um] = item.time_until.split(":").map(Number);
+    if (nowMinutes < fh * 60 + fm || nowMinutes > uh * 60 + um) return false;
+  }
+
+  if (item.date_from && todayStr < item.date_from) return false;
+  if (item.date_until && todayStr > item.date_until) return false;
+
+  return true;
+}
+
 export default async function CustomerMenuPage({
   params,
   searchParams,
@@ -16,18 +39,22 @@ export default async function CustomerMenuPage({
 
   const service = createServiceClient();
 
-  // Fetch restaurant by slug
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: restaurant } = await (service as any)
     .from("restaurants")
-    .select("id, name, is_active")
+    .select("id, name, is_active, customer_ordering_enabled, qr_mode")
     .eq("slug", slug)
     .maybeSingle();
 
   if (!restaurant || !restaurant.is_active) notFound();
 
-  // Resolve table if QR token provided
+  const orderingEnabled: boolean = restaurant.customer_ordering_enabled ?? true;
+  const qrMode: string = restaurant.qr_mode ?? "ordering_enabled";
+
+  // Resolve table + active session if QR token provided
   let tableId: string | null = null;
+  let sessionId: string | null = null;
+
   if (tableQrToken) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: table } = await (service as any)
@@ -37,7 +64,21 @@ export default async function CustomerMenuPage({
       .eq("qr_token", tableQrToken)
       .eq("is_active", true)
       .maybeSingle();
-    tableId = table?.id ?? null;
+
+    if (table) {
+      tableId = table.id;
+      // Find active session with a PIN set
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: activeSession } = await (service as any)
+        .from("sessions")
+        .select("id")
+        .eq("restaurant_id", restaurant.id)
+        .eq("table_id", tableId)
+        .eq("status", "active")
+        .not("customer_pin", "is", null)
+        .maybeSingle();
+      sessionId = activeSession?.id ?? null;
+    }
   }
 
   const categories = await getMenuCategories(restaurant.id);
@@ -46,14 +87,21 @@ export default async function CustomerMenuPage({
   const itemsByCategory = await Promise.all(
     activeCategories.map((c) => getMenuItemsByCategory(restaurant.id, c.id))
   );
-  const allItems: MenuItemRow[] = itemsByCategory.flat();
+  const allItems: MenuItemRow[] = itemsByCategory.flat().filter(isItemAvailableNow);
+
+  const categoriesWithItems = activeCategories.filter((c) =>
+    allItems.some((i) => i.category_id === c.id)
+  );
 
   return (
     <CustomerMenu
       restaurantId={restaurant.id}
       restaurantName={restaurant.name}
       tableId={tableId}
-      categories={activeCategories}
+      sessionId={sessionId}
+      orderingEnabled={orderingEnabled}
+      qrMode={qrMode}
+      categories={categoriesWithItems}
       items={allItems}
     />
   );

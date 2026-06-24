@@ -1,11 +1,18 @@
 "use client";
 
-import { useState, useActionState } from "react";
+import { useState, useActionState, useTransition } from "react";
 import { submitOrder } from "@/app/actions/pos";
 import type { ActionResult, CartItem } from "@/app/actions/pos";
 import type { CategoryRow, MenuItemRow } from "@/app/actions/menu";
 import { Button } from "@/components/ui/button";
 import { Minus, Plus, ShoppingBag } from "lucide-react";
+
+const FOOD_DOT: Record<string, { color: string; title: string }> = {
+  veg:     { color: "#1a7a4a", title: "Veg" },
+  non_veg: { color: "#c0392b", title: "Non-Veg" },
+  vegan:   { color: "#2563eb", title: "Vegan" },
+  egg:     { color: "#b45309", title: "Egg" },
+};
 
 export function MenuBrowser({
   sessionId,
@@ -24,8 +31,11 @@ export function MenuBrowser({
     submitOrder,
     null
   );
+  const [, startTransition] = useTransition();
 
-  const visibleItems = items.filter((i) => i.category_id === activeCategoryId && i.is_available);
+  const visibleItems = items.filter(
+    (i) => i.category_id === activeCategoryId && i.availability_status === "available"
+  );
 
   function adjust(item: MenuItemRow, delta: number) {
     setCart((prev) => {
@@ -68,7 +78,8 @@ export function MenuBrowser({
     const fd = new FormData();
     fd.set("session_id", sessionId);
     fd.set("items", JSON.stringify(cartItems));
-    dispatch(fd);
+    // dispatch must be called inside startTransition (React 19 rule)
+    startTransition(() => dispatch(fd));
   }
 
   if (categories.length === 0) {
@@ -122,9 +133,18 @@ export function MenuBrowser({
                     borderColor: qty > 0 ? "var(--color-primary)" : "var(--color-hairline)",
                   }}
                 >
-                  <p className="text-sm leading-tight" style={{ color: "var(--color-ink)" }}>
-                    {item.name}
-                  </p>
+                  <div className="flex items-start gap-1.5">
+                    {FOOD_DOT[item.food_type] && (
+                      <span
+                        title={FOOD_DOT[item.food_type].title}
+                        className="mt-0.5 w-2.5 h-2.5 rounded-sm border flex-shrink-0"
+                        style={{ borderColor: FOOD_DOT[item.food_type].color, background: FOOD_DOT[item.food_type].color + "22" }}
+                      />
+                    )}
+                    <p className="text-sm leading-tight flex-1" style={{ color: "var(--color-ink)" }}>
+                      {item.name}
+                    </p>
+                  </div>
                   <p className="text-sm tabular" style={{ color: "var(--color-ink-mute)" }}>
                     ₹{Number(item.price).toFixed(0)}
                   </p>
