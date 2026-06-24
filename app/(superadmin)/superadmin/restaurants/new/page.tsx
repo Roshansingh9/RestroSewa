@@ -64,6 +64,8 @@ export default function NewRestaurantPage() {
   const [tier, setTier] = useState<Tier>("free");
   const [maxTables, setMaxTables] = useState(TIER_DEFAULTS.free.tables);
   const [maxRooms, setMaxRooms] = useState(TIER_DEFAULTS.free.rooms);
+  const [orderingEnabled, setOrderingEnabled] = useState(true);
+  const [qrMode, setQrMode] = useState<"ordering_enabled" | "view_only">("ordering_enabled");
 
   useEffect(() => {
     if (state && "redirectTo" in state) {
@@ -282,6 +284,98 @@ export default function NewRestaurantPage() {
               </div>
             </div>
           )}
+        </div>
+
+        {/* Customer ordering configuration */}
+        <div
+          className="flex flex-col gap-4 rounded-lg border px-4 py-4"
+          style={{ borderColor: "var(--color-hairline)", background: "var(--color-canvas-soft)" }}
+        >
+          <p
+            className="text-xs font-medium uppercase"
+            style={{ color: "var(--color-ink-mute)", letterSpacing: "0.08em" }}
+          >
+            Customer ordering
+          </p>
+
+          {/* Enabled / Disabled toggle */}
+          <div>
+            <FieldLabel>Customer ordering via QR</FieldLabel>
+            <div className="flex gap-3 mt-2">
+              {([true, false] as const).map((v) => (
+                <label
+                  key={String(v)}
+                  className="flex items-center gap-2 cursor-pointer text-sm px-3 py-2.5 rounded-lg border flex-1"
+                  style={{
+                    borderColor: orderingEnabled === v ? "var(--color-primary)" : "var(--color-hairline-input)",
+                    background: orderingEnabled === v ? "rgba(99,102,241,0.06)" : "var(--color-canvas)",
+                    color: "var(--color-ink)",
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="customer_ordering_enabled"
+                    value={String(v)}
+                    checked={orderingEnabled === v}
+                    onChange={() => setOrderingEnabled(v)}
+                    className="accent-indigo-500"
+                  />
+                  <span>
+                    <span className="font-medium block text-xs">{v ? "Enabled" : "Disabled"}</span>
+                    <span className="text-xs" style={{ color: "var(--color-ink-mute)" }}>
+                      {v
+                        ? "Customers can place orders after PIN"
+                        : "Customers can browse only — no ordering"}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Ordering mode */}
+          <div style={{ opacity: orderingEnabled ? 1 : 0.4, pointerEvents: orderingEnabled ? "auto" : "none" }}>
+            <FieldLabel>Ordering mode</FieldLabel>
+            <div className="flex gap-3 mt-2">
+              {(
+                [
+                  {
+                    value: "ordering_enabled" as const,
+                    label: "Menu + Ordering",
+                    desc: "Browse menu, place orders, call waiter",
+                  },
+                  {
+                    value: "view_only" as const,
+                    label: "Menu Only",
+                    desc: "Browse menu — no ordering or waiter call",
+                  },
+                ] as const
+              ).map(({ value, label, desc }) => (
+                <label
+                  key={value}
+                  className="flex items-center gap-2 cursor-pointer text-sm px-3 py-2.5 rounded-lg border flex-1"
+                  style={{
+                    borderColor: qrMode === value ? "var(--color-primary)" : "var(--color-hairline-input)",
+                    background: qrMode === value ? "rgba(99,102,241,0.06)" : "var(--color-canvas)",
+                    color: "var(--color-ink)",
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="qr_mode"
+                    value={value}
+                    checked={qrMode === value}
+                    onChange={() => setQrMode(value)}
+                    className="accent-indigo-500"
+                  />
+                  <span>
+                    <span className="font-medium block text-xs">{label}</span>
+                    <span className="text-xs" style={{ color: "var(--color-ink-mute)" }}>{desc}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
 
         {errorMsg && (

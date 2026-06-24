@@ -106,6 +106,11 @@ export async function createRestaurant(
   if (needsRooms && (!maxRooms || maxRooms < 1))
     return { error: "Maximum rooms must be at least 1." };
 
+  const orderingEnabled = formData.get("customer_ordering_enabled") === "true";
+  const qrMode = (formData.get("qr_mode") as string) || "ordering_enabled";
+  const validQrModes = ["ordering_enabled", "view_only"];
+  if (!validQrModes.includes(qrMode)) return { error: "Invalid ordering mode." };
+
   const service = createServiceClient();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (service as any)
@@ -117,6 +122,8 @@ export async function createRestaurant(
       subscription_tier: tier || "free",
       max_tables: needsTables ? maxTables : null,
       max_rooms: needsRooms ? maxRooms : null,
+      customer_ordering_enabled: orderingEnabled,
+      qr_mode: qrMode,
     })
     .select("id")
     .single();
