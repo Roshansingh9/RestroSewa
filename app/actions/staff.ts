@@ -180,6 +180,34 @@ export async function softDeleteStaffMember(
   return null;
 }
 
+export async function updateWorkstationAssignments(
+  staffId: string,
+  restaurantId: string,
+  workstationIds: string[]
+): Promise<ActionResult> {
+  const service = createServiceClient();
+
+  // Delete existing assignments
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: delErr } = await (service as any)
+    .from("restaurant_user_workstations")
+    .delete()
+    .eq("restaurant_user_id", staffId);
+  if (delErr) return { error: "Failed to update assignments." };
+
+  if (workstationIds.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: insErr } = await (service as any)
+      .from("restaurant_user_workstations")
+      .insert(workstationIds.map((wid) => ({ restaurant_user_id: staffId, workstation_id: wid })));
+    if (insErr) return { error: "Failed to save assignments." };
+  }
+
+  revalidatePath(`/admin/staff`);
+  revalidatePath(`/superadmin/restaurants/${restaurantId}`);
+  return null;
+}
+
 export async function updateStaffMember(
   _prevState: ActionResult,
   formData: FormData

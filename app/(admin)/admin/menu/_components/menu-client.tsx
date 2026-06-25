@@ -10,6 +10,7 @@ import {
 import { useRouter } from "next/navigation";
 import {
   createCategory,
+  updateCategory,
   createMenuItem,
   updateMenuItem,
   softDeleteMenuItem,
@@ -898,15 +899,28 @@ function CategoryAccordion({
   category,
   items,
   restaurantId,
+  workstations,
 }: {
   category: CategoryRow;
   items: MenuItemRow[];
   restaurantId: string;
+  workstations: WorkstationRow[];
 }) {
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [addingItem, setAddingItem] = useState(false);
   const [, startToggle] = useTransition();
   const [, startDelete] = useTransition();
+  const [editState, editAction, editPending] = useActionState<ActionResult, FormData>(updateCategory, null);
+  const [editSubmitted, setEditSubmitted] = useState(false);
+
+  useEffect(() => { if (editPending) setEditSubmitted(true); }, [editPending]);
+  useEffect(() => {
+    if (editSubmitted && !editPending && editState === null) {
+      setEditSubmitted(false);
+      setEditing(false);
+    }
+  }, [editSubmitted, editPending, editState]);
 
   const catItems = items.filter((i) => i.category_id === category.id);
 
@@ -915,60 +929,120 @@ function CategoryAccordion({
       className="rounded-xl border overflow-hidden"
       style={{ background: "var(--color-canvas)", borderColor: "var(--color-hairline)" }}
     >
-      <div className="flex items-center gap-3 px-4 py-3">
-        <button
-          type="button"
-          onClick={() => setOpen(!open)}
-          className="flex items-center gap-2 flex-1 text-left"
+      {/* Header */}
+      {editing ? (
+        <form
+          action={editAction}
+          className="flex items-end gap-2 flex-wrap px-4 py-3 border-b"
+          style={{ borderColor: "var(--color-primary)", borderBottomWidth: 1.5 }}
         >
-          {open
-            ? <ChevronDown size={15} style={{ color: "var(--color-ink-mute)" }} />
-            : <ChevronRight size={15} style={{ color: "var(--color-ink-mute)" }} />
-          }
-          <span className="text-sm font-medium" style={{ color: "var(--color-ink)" }}>
-            {category.name}
-          </span>
-          <span className="text-xs ml-1" style={{ color: "var(--color-ink-mute)" }}>
-            {catItems.length} items · {category.workstation_name ?? "—"}
-          </span>
-        </button>
-
-        <button
-          type="button"
-          className="text-xs px-2 py-0.5 rounded-md border"
-          style={{
-            color: category.is_active ? "#1a7a4a" : "var(--color-ink-mute)",
-            borderColor: category.is_active ? "#1a7a4a44" : "var(--color-hairline)",
-            background: category.is_active ? "#f0fdf4" : "transparent",
-          }}
-          onClick={() => startToggle(async () => { await toggleCategoryStatus(category.id, !category.is_active); })}
-        >
-          {category.is_active ? "Active" : "Hidden"}
-        </button>
-
-        <button
-          type="button"
-          title="Add item"
-          onClick={() => { setOpen(true); setAddingItem(true); }}
-          style={{ color: "var(--color-ink-mute)" }}
-        >
-          <Plus size={15} />
-        </button>
-
-        <button
-          type="button"
-          title="Delete category"
-          style={{ color: "var(--color-ink-mute)" }}
-          onClick={() => startDelete(async () => {
-            if (confirm(`Delete category "${category.name}"?`)) {
-              const r = await deleteCategory(category.id);
-              if (r?.error) alert(r.error);
+          <input type="hidden" name="id" value={category.id} />
+          <div className="flex flex-col gap-1">
+            <label className="text-xs" style={{ color: "var(--color-ink-mute)" }}>Name</label>
+            <Input name="name" defaultValue={category.name} required className="w-36 h-8 text-sm" />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs" style={{ color: "var(--color-ink-mute)" }}>Description</label>
+            <Input name="description" defaultValue={category.description ?? ""} className="w-44 h-8 text-sm" placeholder="Optional" />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs" style={{ color: "var(--color-ink-mute)" }}>Workstation</label>
+            <select
+              name="workstation_id"
+              defaultValue={category.workstation_id}
+              className="h-8 rounded-sm border px-2 text-sm"
+              style={{ borderColor: "var(--color-hairline-input)", color: "var(--color-ink)", background: "var(--color-canvas)" }}
+            >
+              {workstations.map((w) => (
+                <option key={w.id} value={w.id}>{w.name}</option>
+              ))}
+            </select>
+          </div>
+          <button
+            type="submit"
+            disabled={editPending}
+            className="text-xs px-3 py-1.5 rounded font-medium h-8"
+            style={{ background: "var(--color-primary)", color: "#fff" }}
+          >
+            {editPending ? "…" : "Save"}
+          </button>
+          <button type="button" onClick={() => setEditing(false)} style={{ color: "var(--color-ink-mute)" }}>
+            <X size={14} />
+          </button>
+          {editState?.error && (
+            <p className="text-xs w-full" style={{ color: "var(--color-ruby)" }}>{editState.error}</p>
+          )}
+        </form>
+      ) : (
+        <div className="flex items-center gap-3 px-4 py-3">
+          <button
+            type="button"
+            onClick={() => setOpen(!open)}
+            className="flex items-center gap-2 flex-1 text-left"
+          >
+            {open
+              ? <ChevronDown size={15} style={{ color: "var(--color-ink-mute)" }} />
+              : <ChevronRight size={15} style={{ color: "var(--color-ink-mute)" }} />
             }
-          })}
-        >
-          <Trash2 size={14} />
-        </button>
-      </div>
+            <span className="text-sm font-medium" style={{ color: "var(--color-ink)" }}>
+              {category.name}
+            </span>
+            <span className="text-xs ml-1" style={{ color: "var(--color-ink-mute)" }}>
+              {catItems.length} items · {category.workstation_name ?? "—"}
+            </span>
+            {category.description && (
+              <span className="text-xs" style={{ color: "var(--color-ink-mute)" }}>
+                · {category.description}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            className="text-xs px-2 py-0.5 rounded-md border"
+            style={{
+              color: category.is_active ? "#1a7a4a" : "var(--color-ink-mute)",
+              borderColor: category.is_active ? "#1a7a4a44" : "var(--color-hairline)",
+              background: category.is_active ? "#f0fdf4" : "transparent",
+            }}
+            onClick={() => startToggle(async () => { await toggleCategoryStatus(category.id, !category.is_active); })}
+          >
+            {category.is_active ? "Active" : "Hidden"}
+          </button>
+
+          <button
+            type="button"
+            title="Edit category"
+            onClick={() => setEditing(true)}
+            style={{ color: "var(--color-ink-mute)" }}
+          >
+            <Pencil size={13} />
+          </button>
+
+          <button
+            type="button"
+            title="Add item"
+            onClick={() => { setOpen(true); setAddingItem(true); }}
+            style={{ color: "var(--color-ink-mute)" }}
+          >
+            <Plus size={15} />
+          </button>
+
+          <button
+            type="button"
+            title="Delete category"
+            style={{ color: "var(--color-ink-mute)" }}
+            onClick={() => startDelete(async () => {
+              if (confirm(`Delete category "${category.name}"?`)) {
+                const r = await deleteCategory(category.id);
+                if (r?.error) alert(r.error);
+              }
+            })}
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+      )}
 
       {open && (
         <div
@@ -1058,6 +1132,7 @@ export function MenuClient({
               category={c}
               items={items}
               restaurantId={restaurantId}
+              workstations={workstations}
             />
           ))}
         </div>

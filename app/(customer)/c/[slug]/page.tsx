@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getMenuCategories, getMenuItemsByCategory } from "@/app/actions/menu";
 import type { MenuItemRow } from "@/app/actions/menu";
+import { getCustomerNotifState } from "@/app/actions/customer";
+import type { CustomerNotifState } from "@/app/actions/customer";
 import { CustomerMenu } from "./_components/customer-menu";
 
 function isItemAvailableNow(item: MenuItemRow): boolean {
@@ -67,7 +69,6 @@ export default async function CustomerMenuPage({
 
     if (table) {
       tableId = table.id;
-      // Find active session with a PIN set
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: activeSession } = await (service as any)
         .from("sessions")
@@ -81,14 +82,16 @@ export default async function CustomerMenuPage({
     }
   }
 
-  const categories = await getMenuCategories(restaurant.id);
-  const activeCategories = categories.filter((c) => c.is_active);
+  const [categories, initialNotifState] = await Promise.all([
+    getMenuCategories(restaurant.id),
+    getCustomerNotifState(restaurant.id, tableId),
+  ]);
 
+  const activeCategories = categories.filter((c) => c.is_active);
   const itemsByCategory = await Promise.all(
     activeCategories.map((c) => getMenuItemsByCategory(restaurant.id, c.id))
   );
   const allItems: MenuItemRow[] = itemsByCategory.flat().filter(isItemAvailableNow);
-
   const categoriesWithItems = activeCategories.filter((c) =>
     allItems.some((i) => i.category_id === c.id)
   );
@@ -103,6 +106,7 @@ export default async function CustomerMenuPage({
       qrMode={qrMode}
       categories={categoriesWithItems}
       items={allItems}
+      initialNotifState={initialNotifState}
     />
   );
 }

@@ -8,7 +8,7 @@ import {
   checkSessionActive,
   submitCustomerOrder,
 } from "@/app/actions/customer";
-import type { CustomerCartItem } from "@/app/actions/customer";
+import type { CustomerCartItem, CustomerNotifState, NotificationStatus } from "@/app/actions/customer";
 import { Bell, UtensilsCrossed, Plus, Minus, ShoppingBag, X, Lock } from "lucide-react";
 
 const FOOD_TYPE_CONFIG = {
@@ -161,25 +161,82 @@ function PinEntry({
 
 // ─── Notify Bar ────────────────────────────────────────────────────────────────
 
+const NOTIF_LABELS: Record<
+  "call_waiter" | "request_bill",
+  Record<NonNullable<NotificationStatus>, string>
+> = {
+  call_waiter: {
+    new:          "Waiting for staff…",
+    acknowledged: "Staff on the way",
+  },
+  request_bill: {
+    new:          "Bill requested…",
+    acknowledged: "Bill being prepared",
+  },
+};
+
 function NotifyBar({
   restaurantId,
   tableId,
+  initialNotifState,
 }: {
   restaurantId: string;
   tableId: string | null;
+  initialNotifState: CustomerNotifState;
 }) {
-  const [sent, setSent] = useState<string | null>(null);
+  const [notifState, setNotifState] = useState<CustomerNotifState>(initialNotifState);
   const [, start] = useTransition();
 
+  if (!tableId) return null;
+
   function notify(type: "call_waiter" | "request_bill") {
+    // Already pending — ignore
+    if (notifState[type]) return;
     start(async () => {
-      await sendNotification(restaurantId, tableId, type);
-      setSent(type === "call_waiter" ? "Waiter called!" : "Bill requested!");
-      setTimeout(() => setSent(null), 4000);
+      const result = await sendNotification(restaurantId, tableId, type);
+      if (!result?.alreadyPending && !result?.error) {
+        setNotifState((prev) => ({ ...prev, [type]: "new" }));
+      } else if (result?.alreadyPending) {
+        // Server says it's already active — reflect that
+        setNotifState((prev) => ({ ...prev, [type]: "new" }));
+      }
     });
   }
 
-  if (!tableId) return null;
+  function renderButton(
+    type: "call_waiter" | "request_bill",
+    icon: React.ReactNode,
+    label: string,
+    baseStyle: React.CSSProperties
+  ) {
+    const status = notifState[type];
+    const pending = !!status;
+    const statusLabel = status ? NOTIF_LABELS[type][status] : null;
+
+    return (
+      <button
+        type="button"
+        onClick={() => notify(type)}
+        disabled={pending}
+        className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-lg text-sm font-medium transition-opacity"
+        style={{
+          ...baseStyle,
+          opacity: pending ? 0.65 : 1,
+          cursor: pending ? "not-allowed" : "pointer",
+        }}
+      >
+        <span className="flex items-center gap-1.5">
+          {icon}
+          {pending ? statusLabel : label}
+        </span>
+        {pending && (
+          <span className="text-xs font-normal" style={{ opacity: 0.7 }}>
+            {status === "acknowledged" ? "✓ Accepted" : "pending"}
+          </span>
+        )}
+      </button>
+    );
+  }
 
   return (
     <div
@@ -190,34 +247,17 @@ function NotifyBar({
         boxShadow: "0 -4px 16px rgba(13,37,61,0.06)",
       }}
     >
-      {sent ? (
-        <div
-          className="flex-1 text-center text-sm py-2 rounded-lg"
-          style={{ background: "#f0fdf4", color: "#1a7a4a" }}
-        >
-          {sent}
-        </div>
-      ) : (
-        <>
-          <button
-            type="button"
-            onClick={() => notify("call_waiter")}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium"
-            style={{ background: "var(--color-canvas-soft)", color: "var(--color-ink)" }}
-          >
-            <Bell size={14} />
-            Call waiter
-          </button>
-          <button
-            type="button"
-            onClick={() => notify("request_bill")}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium"
-            style={{ background: "var(--color-primary)", color: "#fff" }}
-          >
-            <UtensilsCrossed size={14} />
-            Request bill
-          </button>
-        </>
+      {renderButton(
+        "call_waiter",
+        <Bell size={14} />,
+        "Call waiter",
+        { background: "var(--color-canvas-soft)", color: "var(--color-ink)" }
+      )}
+      {renderButton(
+        "request_bill",
+        <UtensilsCrossed size={14} />,
+        "Request bill",
+        { background: "var(--color-primary)", color: "#fff" }
       )}
     </div>
   );
@@ -392,6 +432,7 @@ export function CustomerMenu({
   qrMode,
   categories,
   items,
+  initialNotifState,
 }: {
   restaurantId: string;
   restaurantName: string;
@@ -401,6 +442,7 @@ export function CustomerMenu({
   qrMode: string;
   categories: CategoryRow[];
   items: MenuItemRow[];
+  initialNotifState: CustomerNotifState;
 }) {
   // Ordering is active only when all conditions are met
   const orderingAvailable =
@@ -644,7 +686,7 @@ export function CustomerMenu({
       )}
 
       {/* Notify bar */}
-      <NotifyBar restaurantId={restaurantId} tableId={tableId} />
+      <NotifyBar restaurantId={restaurantId} tableId={tableId} initialNotifState={initialNotifState} />
     </div>
   );
 }

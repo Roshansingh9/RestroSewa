@@ -12,6 +12,7 @@ export type ActionResult = { error: string } | null;
 export type CategoryRow = {
   id: string;
   name: string;
+  description: string | null;
   workstation_id: string;
   workstation_name: string | null;
   is_active: boolean;
@@ -114,7 +115,7 @@ export async function getMenuCategories(restaurantId: string): Promise<CategoryR
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = await (service as any)
     .from("menu_categories")
-    .select(`id, name, is_active, sort_order, workstation_id, workstations ( name ), menu_items ( id )`)
+    .select(`id, name, description, is_active, sort_order, workstation_id, workstations ( name ), menu_items ( id )`)
     .eq("restaurant_id", restaurantId)
     .order("sort_order")
     .order("name");
@@ -124,6 +125,7 @@ export async function getMenuCategories(restaurantId: string): Promise<CategoryR
   return data.map((c: any) => ({
     id: c.id,
     name: c.name,
+    description: c.description ?? null,
     workstation_id: c.workstation_id,
     workstation_name: c.workstations?.name ?? null,
     is_active: c.is_active,
@@ -152,6 +154,41 @@ export async function createCategory(
   const { error } = await (service as any)
     .from("menu_categories")
     .insert({ restaurant_id: restaurantId, name, workstation_id: workstationId });
+
+  if (error) return { error: error.message };
+  revalidatePath("/admin/menu");
+  return null;
+}
+
+export async function updateCategory(
+  _prevState: ActionResult,
+  formData: FormData
+): Promise<ActionResult> {
+  const ru = await getRestaurantUser();
+  if (!hasPermission(ru, PERMISSIONS.MANAGE_MENU)) return { error: "Permission denied." };
+
+  const id = formData.get("id") as string;
+  const name = (formData.get("name") as string)?.trim();
+  const description = (formData.get("description") as string)?.trim() || null;
+  const workstationId = formData.get("workstation_id") as string;
+
+  if (!name || !workstationId) return { error: "Name and workstation are required." };
+
+  const service = createServiceClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: existing } = await (service as any)
+    .from("menu_categories")
+    .select("restaurant_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (!existing || existing.restaurant_id !== ru.restaurant_id)
+    return { error: "Permission denied." };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (service as any)
+    .from("menu_categories")
+    .update({ name, description, workstation_id: workstationId })
+    .eq("id", id);
 
   if (error) return { error: error.message };
   revalidatePath("/admin/menu");

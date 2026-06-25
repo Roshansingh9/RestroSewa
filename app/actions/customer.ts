@@ -90,12 +90,55 @@ export async function submitCustomerOrder(
   return {};
 }
 
+export type NotificationStatus = "new" | "acknowledged" | null;
+
+export type CustomerNotifState = {
+  call_waiter: NotificationStatus;
+  request_bill: NotificationStatus;
+};
+
+export async function getCustomerNotifState(
+  restaurantId: string,
+  tableId: string | null
+): Promise<CustomerNotifState> {
+  if (!tableId) return { call_waiter: null, request_bill: null };
+  const service = createServiceClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data } = await (service as any)
+    .from("notifications")
+    .select("type, status")
+    .eq("restaurant_id", restaurantId)
+    .eq("table_id", tableId)
+    .in("type", ["call_waiter", "request_bill"])
+    .in("status", ["new", "acknowledged"]);
+
+  const rows = (data ?? []) as { type: string; status: string }[];
+  const find = (t: string) =>
+    (rows.find((r) => r.type === t)?.status as NotificationStatus) ?? null;
+
+  return { call_waiter: find("call_waiter"), request_bill: find("request_bill") };
+}
+
 export async function sendNotification(
   restaurantId: string,
   tableId: string | null,
   type: "call_waiter" | "request_bill"
-) {
+): Promise<{ error?: string; alreadyPending?: boolean }> {
   const service = createServiceClient();
+
+  // Prevent duplicate active notifications of the same type for this table
+  if (tableId) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: existing } = await (service as any)
+      .from("notifications")
+      .select("id")
+      .eq("restaurant_id", restaurantId)
+      .eq("table_id", tableId)
+      .eq("type", type)
+      .in("status", ["new", "acknowledged"])
+      .maybeSingle();
+    if (existing) return { alreadyPending: true };
+  }
 
   // Find active session for this table (if any)
   let sessionId: string | null = null;
@@ -112,7 +155,7 @@ export async function sendNotification(
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (service as any).from("notifications").insert({
+  const { error } = await (service as any).from("notifications").insert({
     restaurant_id: restaurantId,
     table_id: tableId,
     session_id: sessionId,
@@ -120,5 +163,7 @@ export async function sendNotification(
     status: "new",
   });
 
-  revalidatePath("/employee/queue");
+  if (error) return { error: error.message };
+  revalidatePath("/employee/notifications");
+  return {};
 }
