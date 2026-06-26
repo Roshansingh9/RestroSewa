@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useTransition, useState } from "react";
-import { closeSessionWithPayment, updateOrderItemStatus } from "@/app/actions/pos";
+import { closeSessionWithPayment, updateOrderItemStatus, forceCloseSession } from "@/app/actions/pos";
 import type { ActionResult, OrderItemRow, SessionDetail } from "@/app/actions/pos";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -294,11 +294,14 @@ export function SessionClient({
   session,
   canCreateOrders = false,
   canCloseBills = false,
+  canForceClose = false,
 }: {
   session: SessionDetail;
   canCreateOrders?: boolean;
   canCloseBills?: boolean;
+  canForceClose?: boolean;
 }) {
+  const [, startForceClose] = useTransition();
   const pendingItems = session.items.filter((i) => i.item_status !== "served");
   const servedItems  = session.items.filter((i) => i.item_status === "served");
   const isClosed     = session.status === "closed";
@@ -394,6 +397,27 @@ export function SessionClient({
             <p className="text-sm text-center py-2" style={{ color: "var(--color-ink-mute)" }}>
               You don't have permission to add items or close this bill.
             </p>
+          )}
+
+          {canForceClose && (
+            <button
+              type="button"
+              className="w-full rounded-xl border py-3 text-sm font-medium transition-colors"
+              style={{ borderColor: "#ef444444", color: "#dc2626", background: "#fff0f0" }}
+              onClick={() => {
+                if (
+                  confirm(
+                    "Force close this session? Pending notifications will be cleared and the table/room will become available immediately."
+                  )
+                ) {
+                  startForceClose(async () => {
+                    await forceCloseSession(session.id);
+                  });
+                }
+              }}
+            >
+              Force close session
+            </button>
           )}
         </>
       )}

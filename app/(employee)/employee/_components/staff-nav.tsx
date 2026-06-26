@@ -4,9 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTransition } from "react";
 import { logout } from "@/app/actions/auth";
-import { Bell, LayoutGrid, ListOrdered, LogOut } from "lucide-react";
+import { Bell, BookOpen, LayoutGrid, ListOrdered, LogOut } from "lucide-react";
 
-const NAV = [
+const BASE_NAV = [
   { label: "Tables",        href: "/employee/dashboard",     icon: LayoutGrid,  exact: true  },
   { label: "Queue",         href: "/employee/queue",         icon: ListOrdered, exact: false },
   { label: "Notifications", href: "/employee/notifications", icon: Bell,        exact: false },
@@ -16,11 +16,16 @@ export function StaffNav({
   restaurantName,
   displayName,
   notificationCount = 0,
+  canManageMenu = false,
 }: {
   restaurantName: string;
   displayName: string;
   notificationCount?: number;
+  canManageMenu?: boolean;
 }) {
+  const NAV = canManageMenu
+    ? [...BASE_NAV, { label: "Menu", href: "/admin/menu", icon: BookOpen, exact: false }]
+    : BASE_NAV;
   const pathname = usePathname();
   const [pending, startTransition] = useTransition();
 

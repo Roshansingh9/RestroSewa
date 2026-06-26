@@ -1,17 +1,46 @@
-﻿import { requireAdminOrPermission } from "@/lib/auth/guards";
+import { requireAdminOrPermission } from "@/lib/auth/guards";
 import { PERMISSIONS } from "@/lib/permissions";
 import { getRoomTypesWithRooms } from "@/app/actions/rooms-admin";
 import { getRestaurantSlug } from "@/app/actions/tables-admin";
+import { createServiceClient } from "@/lib/supabase/service";
 import { RoomsClient } from "./_components/rooms-client";
+
+export type EmployeeOption = { id: string; display_name: string };
 
 export default async function RoomsPage() {
   const { restaurantUser } = await requireAdminOrPermission(PERMISSIONS.MANAGE_ROOMS);
   const { restaurant_id } = restaurantUser;
+  const service = createServiceClient();
 
-  const [{ types, totalRooms }, restaurantSlug] = await Promise.all([
+  const [{ types, totalRooms }, restaurantSlug, employeesResult] = await Promise.all([
     getRoomTypesWithRooms(restaurant_id),
     getRestaurantSlug(restaurant_id),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (service as any)
+      .from("restaurant_users")
+      .select("id, display_name")
+      .eq("restaurant_id", restaurant_id)
+      .eq("is_active", true)
+      .is("deleted_at", null)
+      .order("display_name"),
   ]);
+
+  const employees: EmployeeOption[] = (employeesResult.data as EmployeeOption[]) ?? [];
+
+  // Fetch many-to-many room assignments for these employees
+  const employeeIds = employees.map((e) => e.id);
+  const assignedByRoom: Record<string, string[]> = {};
+  if (employeeIds.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: assignments } = await (service as any)
+      .from("restaurant_user_rooms")
+      .select("restaurant_user_id, room_id")
+      .in("restaurant_user_id", employeeIds);
+    for (const a of (assignments ?? []) as { restaurant_user_id: string; room_id: string }[]) {
+      if (!assignedByRoom[a.room_id]) assignedByRoom[a.room_id] = [];
+      assignedByRoom[a.room_id].push(a.restaurant_user_id);
+    }
+  }
 
   return (
     <div className="p-4 md:p-8">
@@ -30,6 +59,8 @@ export default async function RoomsPage() {
         totalRooms={totalRooms}
         restaurantId={restaurant_id}
         restaurantSlug={restaurantSlug ?? ""}
+        employees={employees}
+        assignedByRoom={assignedByRoom}
       />
     </div>
   );

@@ -4,8 +4,6 @@ import { getRestaurantWithStaff } from "@/app/actions/restaurants";
 import { AddStaffForm } from "./_components/add-staff-form";
 import { StaffSection } from "./_components/staff-section";
 import { RestaurantDetailClient } from "./_components/restaurant-detail-client";
-import { PinSection } from "./_components/pin-section";
-import { getActiveSessionsWithPins } from "@/app/actions/pos";
 import { ChevronLeft } from "lucide-react";
 
 export default async function RestaurantDetailPage({
@@ -19,7 +17,6 @@ export default async function RestaurantDetailPage({
   if (!result) notFound();
 
   const { restaurant: r, staff } = result;
-  const activeSessions = await getActiveSessionsWithPins(r.id);
 
   return (
     <div className="p-8 max-w-2xl">
@@ -34,9 +31,6 @@ export default async function RestaurantDetailPage({
 
       {/* Restaurant info card — editable */}
       <RestaurantDetailClient restaurant={r} />
-
-      {/* Active session PINs */}
-      <PinSection sessions={activeSessions} />
 
       {/* Staff section */}
       <div>

@@ -8,7 +8,7 @@ import {
   toggleTableStatus,
   deleteTable,
   regenerateTableQr,
-  assignWaiterToTable,
+  setTableWaiters,
 } from "@/app/actions/tables-admin";
 import type { ActionResult, GroupWithTables, TableRow } from "@/app/actions/tables-admin";
 import type { EmployeeOption } from "../page";
@@ -135,15 +135,18 @@ function TablePill({
   table,
   groups,
   employees,
+  assignedUserIds,
   onQrClick,
 }: {
   table: TableRow;
   groups: GroupWithTables[];
   employees: EmployeeOption[];
+  assignedUserIds: string[];
   onQrClick: (table: TableRow) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
+  const [localAssigned, setLocalAssigned] = useState<string[]>(assignedUserIds);
   const [, startToggle] = useTransition();
   const [, startDelete] = useTransition();
   const [, startAssign] = useTransition();
@@ -152,6 +155,13 @@ function TablePill({
     null
   );
   const [editSubmitted, setEditSubmitted] = useState(false);
+
+  // Sync when server-side assignment set changes (compare by content, not reference)
+  const assignedKey = [...assignedUserIds].sort().join(",");
+  useEffect(() => {
+    setLocalAssigned(assignedUserIds);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assignedKey]);
 
   useEffect(() => { if (editPending) setEditSubmitted(true); }, [editPending]);
   useEffect(() => {
@@ -242,8 +252,14 @@ function TablePill({
         {employees.length > 0 && (
           <button
             type="button"
-            title={table.assigned_user_name ? `Assigned: ${table.assigned_user_name}` : "Assign waiter"}
-            style={{ color: table.assigned_user_id ? "var(--color-primary)" : "var(--color-ink-mute)" }}
+            title={
+              localAssigned.length > 0
+                ? `${localAssigned.length} waiter(s) assigned`
+                : "Assign waiter(s)"
+            }
+            style={{
+              color: localAssigned.length > 0 ? "var(--color-primary)" : "var(--color-ink-mute)",
+            }}
             onClick={() => setAssignOpen((o) => !o)}
           >
             <UserRound size={12} />
@@ -271,47 +287,42 @@ function TablePill({
         </button>
       </div>
 
-      {/* Waiter assignment dropdown */}
+      {/* Waiter assignment — multi-select pills */}
       {assignOpen && employees.length > 0 && (
         <div
           className="border-t px-3 pb-2 flex flex-col gap-1"
           style={{ borderColor: "var(--color-hairline)" }}
         >
-          <p className="text-xs pt-1.5" style={{ color: "var(--color-ink-mute)" }}>Assign waiter</p>
+          <p className="text-xs pt-1.5" style={{ color: "var(--color-ink-mute)" }}>
+            Assign waiters (tap to toggle)
+          </p>
           <div className="flex flex-wrap gap-1">
-            <button
-              type="button"
-              className="text-xs px-2 py-0.5 rounded-full border"
-              style={{
-                background: !table.assigned_user_id ? "var(--color-canvas-soft)" : "transparent",
-                borderColor: "var(--color-hairline)",
-                color: "var(--color-ink-mute)",
-              }}
-              onClick={() => startAssign(async () => {
-                await assignWaiterToTable(table.id, null);
-                setAssignOpen(false);
-              })}
-            >
-              None
-            </button>
-            {employees.map((e) => (
-              <button
-                key={e.id}
-                type="button"
-                className="text-xs px-2 py-0.5 rounded-full border"
-                style={{
-                  background: table.assigned_user_id === e.id ? "rgba(99,102,241,0.08)" : "transparent",
-                  borderColor: table.assigned_user_id === e.id ? "var(--color-primary)" : "var(--color-hairline)",
-                  color: table.assigned_user_id === e.id ? "var(--color-primary)" : "var(--color-ink-mute)",
-                }}
-                onClick={() => startAssign(async () => {
-                  await assignWaiterToTable(table.id, e.id);
-                  setAssignOpen(false);
-                })}
-              >
-                {e.display_name}
-              </button>
-            ))}
+            {employees.map((e) => {
+              const active = localAssigned.includes(e.id);
+              return (
+                <button
+                  key={e.id}
+                  type="button"
+                  className="text-xs px-2 py-0.5 rounded-full border"
+                  style={{
+                    background: active ? "rgba(99,102,241,0.08)" : "transparent",
+                    borderColor: active ? "var(--color-primary)" : "var(--color-hairline)",
+                    color: active ? "var(--color-primary)" : "var(--color-ink-mute)",
+                  }}
+                  onClick={() =>
+                    startAssign(async () => {
+                      const next = active
+                        ? localAssigned.filter((id) => id !== e.id)
+                        : [...localAssigned, e.id];
+                      setLocalAssigned(next);
+                      await setTableWaiters(table.id, next);
+                    })
+                  }
+                >
+                  {e.display_name}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -394,12 +405,14 @@ export function TablesClient({
   restaurantId,
   restaurantSlug,
   employees,
+  assignedByTable,
 }: {
   ungrouped: TableRow[];
   groups: GroupWithTables[];
   restaurantId: string;
   restaurantSlug: string;
   employees: EmployeeOption[];
+  assignedByTable: Record<string, string[]>;
 }) {
   const [qrTarget, setQrTarget] = useState<QrTarget>(null);
   const [, startRegen] = useTransition();
@@ -439,7 +452,7 @@ export function TablesClient({
             </p>
             <div className="flex flex-wrap gap-2 mb-3">
               {g.tables.map((t) => (
-                <TablePill key={t.id} table={t} groups={groups} employees={employees} onQrClick={handleQrClick} />
+                <TablePill key={t.id} table={t} groups={groups} employees={employees} assignedUserIds={assignedByTable[t.id] ?? []} onQrClick={handleQrClick} />
               ))}
               {g.tables.length === 0 && (
                 <p className="text-xs" style={{ color: "var(--color-ink-mute)" }}>No tables in this group.</p>
@@ -462,7 +475,7 @@ export function TablesClient({
             )}
             <div className="flex flex-wrap gap-2 mb-3">
               {ungrouped.map((t) => (
-                <TablePill key={t.id} table={t} groups={groups} employees={employees} onQrClick={handleQrClick} />
+                <TablePill key={t.id} table={t} groups={groups} employees={employees} assignedUserIds={assignedByTable[t.id] ?? []} onQrClick={handleQrClick} />
               ))}
               {ungrouped.length === 0 && groups.length === 0 && (
                 <p className="text-sm" style={{ color: "var(--color-ink-mute)" }}>

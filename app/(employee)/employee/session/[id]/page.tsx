@@ -21,6 +21,9 @@ export default async function SessionPage({
 
   const canCreateOrders = hasPermission(restaurantUser, PERMISSIONS.CREATE_ORDERS);
   const canCloseBills   = hasPermission(restaurantUser, PERMISSIONS.CLOSE_BILLS);
+  const canForceClose   =
+    hasPermission(restaurantUser, PERMISSIONS.CLOSE_BILLS) ||
+    hasPermission(restaurantUser, PERMISSIONS.MANAGE_TABLES);
 
   const label =
     session.type === "table" && session.table_number
@@ -65,6 +68,7 @@ export default async function SessionPage({
         session={session}
         canCreateOrders={canCreateOrders}
         canCloseBills={canCloseBills}
+        canForceClose={canForceClose}
       />
     </div>
   );

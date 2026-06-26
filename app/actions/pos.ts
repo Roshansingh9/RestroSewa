@@ -174,7 +174,7 @@ export async function openRoomSession(roomId: string) {
     .select("id")
     .single();
 
-  if (error) return { error: error.message };
+  if (error) redirect("/employee/dashboard");
   redirect(`/employee/session/${session.id}`);
 }
 
@@ -442,6 +442,55 @@ export async function clearSessionPin(sessionId: string): Promise<ActionResult> 
   if (error) return { error: "Failed to clear PIN." };
   revalidatePath("/superadmin/restaurants");
   return null;
+}
+
+// ─── Force Close Session ─────────────────────────────────────────────────────
+
+export async function forceCloseSession(sessionId: string): Promise<ActionResult> {
+  const ru = await getRestaurantUser();
+  if (
+    !hasPermission(ru, PERMISSIONS.CLOSE_BILLS) &&
+    !hasPermission(ru, PERMISSIONS.MANAGE_TABLES)
+  ) {
+    return { error: "Permission denied." };
+  }
+
+  const service = createServiceClient();
+
+  // Verify ownership and get table/room context
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: session } = await (service as any)
+    .from("sessions")
+    .select("id, restaurant_id, table_id, room_id")
+    .eq("id", sessionId)
+    .maybeSingle();
+
+  if (!session || session.restaurant_id !== ru.restaurant_id)
+    return { error: "Permission denied." };
+
+  // Clear pending notifications for this table or room
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const notifQuery = (service as any)
+    .from("notifications")
+    .update({ status: "completed" })
+    .eq("restaurant_id", ru.restaurant_id)
+    .in("status", ["new", "acknowledged"]);
+
+  if (session.table_id) {
+    await notifQuery.eq("table_id", session.table_id);
+  } else if (session.room_id) {
+    await notifQuery.eq("room_id", session.room_id);
+  }
+
+  // Close the session
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (service as any)
+    .from("sessions")
+    .update({ status: "closed", closed_at: new Date().toISOString() })
+    .eq("id", sessionId);
+
+  revalidatePath("/employee/dashboard");
+  redirect("/employee/dashboard");
 }
 
 // ─── Workstation Queue ────────────────────────────────────────────────────────

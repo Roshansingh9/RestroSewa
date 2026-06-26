@@ -1,6 +1,7 @@
 import { requireRestaurantStaff } from "@/lib/auth/guards";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getNotificationCount } from "@/app/actions/notifications";
+import { hasPermission, PERMISSIONS } from "@/lib/permissions";
 import { StaffNav } from "./employee/_components/staff-nav";
 
 export default async function EmployeeLayout({ children }: { children: React.ReactNode }) {
@@ -15,6 +16,9 @@ export default async function EmployeeLayout({ children }: { children: React.Rea
     .single();
 
   const notificationCount = await getNotificationCount(restaurantUser.restaurant_id);
+  const canManageMenu =
+    restaurantUser.role === "restaurant_admin" ||
+    hasPermission(restaurantUser, PERMISSIONS.MANAGE_MENU);
 
   return (
     <div className="min-h-screen" style={{ background: "var(--color-canvas-soft)" }}>
@@ -22,6 +26,7 @@ export default async function EmployeeLayout({ children }: { children: React.Rea
         restaurantName={restaurant?.name ?? "Restaurant"}
         displayName={restaurantUser.display_name}
         notificationCount={notificationCount}
+        canManageMenu={canManageMenu}
       />
       <main>{children}</main>
     </div>

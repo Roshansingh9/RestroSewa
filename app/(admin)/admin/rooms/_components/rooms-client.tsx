@@ -10,11 +10,14 @@ import {
   setRoomStatus,
   deleteRoom,
   regenerateRoomQr,
+  setRoomWaiters,
 } from "@/app/actions/rooms-admin";
 import type { ActionResult, RoomRow, RoomTypeWithRooms } from "@/app/actions/rooms-admin";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { QrCode, Trash2, X, Download, Pencil, RefreshCw } from "lucide-react";
+import { QrCode, Trash2, X, Download, Pencil, RefreshCw, UserRound } from "lucide-react";
+
+export type EmployeeOption = { id: string; display_name: string };
 import { QRCodeCanvas } from "qrcode.react";
 
 // ─── Status helpers ───────────────────────────────────────────────────────────
@@ -140,20 +143,31 @@ function QrModal({
 function RoomPill({
   room,
   types,
-  restaurantSlug,
+  employees,
+  assignedUserIds,
   onQrClick,
 }: {
   room: RoomRow;
   types: RoomTypeWithRooms[];
-  restaurantSlug: string;
+  employees: EmployeeOption[];
+  assignedUserIds: string[];
   onQrClick: (room: RoomRow) => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [localAssigned, setLocalAssigned] = useState<string[]>(assignedUserIds);
   const [, startStatus] = useTransition();
   const [, startDelete] = useTransition();
+  const [, startAssign] = useTransition();
   const [editState, editAction, editPending] = useActionState<ActionResult, FormData>(updateRoom, null);
   const [editSubmitted, setEditSubmitted] = useState(false);
 
+  // Sync when server-side assignment set changes (compare by content, not reference)
+  const assignedKey = [...assignedUserIds].sort().join(",");
+  useEffect(() => {
+    setLocalAssigned(assignedUserIds);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assignedKey]);
   useEffect(() => { if (editPending) setEditSubmitted(true); }, [editPending]);
   useEffect(() => {
     if (editSubmitted && !editPending && editState === null) {
@@ -208,54 +222,97 @@ function RoomPill({
 
   return (
     <div
-      className="flex items-center gap-2 px-3 py-2 rounded-lg border text-sm"
+      className="flex flex-col rounded-lg border text-sm"
       style={{ background: "var(--color-canvas)", borderColor: "var(--color-hairline)" }}
     >
-      <span style={{ color: "var(--color-ink)", fontWeight: 400 }}>{room.number}</span>
-      <button
-        type="button"
-        title="Show QR code"
-        style={{ color: "var(--color-ink-mute)" }}
-        onClick={() => onQrClick(room)}
-      >
-        <QrCode size={13} />
-      </button>
-      <button
-        type="button"
-        title="Edit room"
-        style={{ color: "var(--color-ink-mute)" }}
-        onClick={() => setEditing(true)}
-      >
-        <Pencil size={12} />
-      </button>
-      <button
-        type="button"
-        className="text-xs font-medium"
-        style={{ color: STATUS_COLOR[room.status] }}
-        title={`Status: ${STATUS_LABEL[room.status]} — click to cycle`}
-        onClick={() =>
-          startStatus(async () => {
-            const r = await setRoomStatus(room.id, nextStatus[room.status]);
-            if (r?.error) alert(r.error);
-          })
-        }
-      >
-        ●
-      </button>
-      <button
-        type="button"
-        style={{ color: "var(--color-ink-mute)" }}
-        onClick={() =>
-          startDelete(async () => {
-            if (confirm(`Delete room ${room.number}?`)) {
-              const r = await deleteRoom(room.id);
+      {/* Main row */}
+      <div className="flex items-center gap-2 px-3 py-2">
+        <span style={{ color: "var(--color-ink)", fontWeight: 400 }}>{room.number}</span>
+        <button type="button" title="Show QR code" style={{ color: "var(--color-ink-mute)" }} onClick={() => onQrClick(room)}>
+          <QrCode size={13} />
+        </button>
+        <button type="button" title="Edit room" style={{ color: "var(--color-ink-mute)" }} onClick={() => setEditing(true)}>
+          <Pencil size={12} />
+        </button>
+        {employees.length > 0 && (
+          <button
+            type="button"
+            title={localAssigned.length > 0 ? `${localAssigned.length} waiter(s) assigned` : "Assign waiter(s)"}
+            style={{ color: localAssigned.length > 0 ? "var(--color-primary)" : "var(--color-ink-mute)" }}
+            onClick={() => setAssignOpen((o) => !o)}
+          >
+            <UserRound size={12} />
+          </button>
+        )}
+        <button
+          type="button"
+          className="text-xs font-medium"
+          style={{ color: STATUS_COLOR[room.status] }}
+          title={`Status: ${STATUS_LABEL[room.status]} — click to cycle`}
+          onClick={() =>
+            startStatus(async () => {
+              const r = await setRoomStatus(room.id, nextStatus[room.status]);
               if (r?.error) alert(r.error);
-            }
-          })
-        }
-      >
-        <Trash2 size={12} />
-      </button>
+            })
+          }
+        >
+          ●
+        </button>
+        <button
+          type="button"
+          style={{ color: "var(--color-ink-mute)" }}
+          onClick={() =>
+            startDelete(async () => {
+              if (confirm(`Delete room ${room.number}?`)) {
+                const r = await deleteRoom(room.id);
+                if (r?.error) alert(r.error);
+              }
+            })
+          }
+        >
+          <Trash2 size={12} />
+        </button>
+      </div>
+
+      {/* Waiter assignment — multi-select pills */}
+      {assignOpen && employees.length > 0 && (
+        <div
+          className="border-t px-3 pb-2 flex flex-col gap-1"
+          style={{ borderColor: "var(--color-hairline)" }}
+        >
+          <p className="text-xs pt-1.5" style={{ color: "var(--color-ink-mute)" }}>
+            Assign waiters (tap to toggle)
+          </p>
+          <div className="flex flex-wrap gap-1">
+            {employees.map((e) => {
+              const active = localAssigned.includes(e.id);
+              return (
+                <button
+                  key={e.id}
+                  type="button"
+                  className="text-xs px-2 py-0.5 rounded-full border"
+                  style={{
+                    background: active ? "rgba(99,102,241,0.08)" : "transparent",
+                    borderColor: active ? "var(--color-primary)" : "var(--color-hairline)",
+                    color: active ? "var(--color-primary)" : "var(--color-ink-mute)",
+                  }}
+                  onClick={() =>
+                    startAssign(async () => {
+                      const next = active
+                        ? localAssigned.filter((id) => id !== e.id)
+                        : [...localAssigned, e.id];
+                      setLocalAssigned(next);
+                      await setRoomWaiters(room.id, next);
+                    })
+                  }
+                >
+                  {e.display_name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -266,13 +323,15 @@ function RoomTypeSection({
   type,
   allTypes,
   restaurantId,
-  restaurantSlug,
+  employees,
+  assignedByRoom,
   onQrClick,
 }: {
   type: RoomTypeWithRooms;
   allTypes: RoomTypeWithRooms[];
   restaurantId: string;
-  restaurantSlug: string;
+  employees: EmployeeOption[];
+  assignedByRoom: Record<string, string[]>;
   onQrClick: (room: RoomRow) => void;
 }) {
   const [editingType, setEditingType] = useState(false);
@@ -363,7 +422,8 @@ function RoomTypeSection({
             key={r.id}
             room={r}
             types={allTypes}
-            restaurantSlug={restaurantSlug}
+            employees={employees}
+            assignedUserIds={assignedByRoom[r.id] ?? []}
             onQrClick={onQrClick}
           />
         ))}
@@ -409,11 +469,15 @@ export function RoomsClient({
   totalRooms,
   restaurantId,
   restaurantSlug,
+  employees,
+  assignedByRoom,
 }: {
   types: RoomTypeWithRooms[];
   totalRooms: number;
   restaurantId: string;
   restaurantSlug: string;
+  employees: EmployeeOption[];
+  assignedByRoom: Record<string, string[]>;
 }) {
   const [qrTarget, setQrTarget] = useState<QrTarget>(null);
   const [, startRegen] = useTransition();
@@ -457,7 +521,8 @@ export function RoomsClient({
             type={t}
             allTypes={types}
             restaurantId={restaurantId}
-            restaurantSlug={restaurantSlug}
+            employees={employees}
+            assignedByRoom={assignedByRoom}
             onQrClick={handleQrClick}
           />
         ))}
