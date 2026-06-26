@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { getSessionDetail } from "@/app/actions/pos";
+import { getSessionDetail, getEffectiveWaiters } from "@/app/actions/pos";
 import { requireRestaurantStaff } from "@/lib/auth/guards";
 import { hasPermission, PERMISSIONS } from "@/lib/permissions";
 import { SessionClient } from "./_components/session-client";
@@ -24,6 +24,19 @@ export default async function SessionPage({
   const canForceClose   =
     hasPermission(restaurantUser, PERMISSIONS.CLOSE_BILLS) ||
     hasPermission(restaurantUser, PERMISSIONS.MANAGE_TABLES);
+
+  // PIN visibility: admin and MANAGE_TABLES (workstation) always see it.
+  // For assigned sessions, only the effective waiter(s) can see the PIN.
+  // Walk-in sessions have no assignment concept, so anyone can see the PIN.
+  const isAdmin = restaurantUser.role === "restaurant_admin";
+  const isWorkstation = hasPermission(restaurantUser, PERMISSIONS.MANAGE_TABLES);
+  const isWalkIn = session.type === "walk_in";
+  let canSeePIN = isAdmin || isWorkstation || isWalkIn;
+  if (!canSeePIN) {
+    const effectiveWaiters = await getEffectiveWaiters(session.table_id, session.room_id);
+    const hasAssignment = effectiveWaiters.length > 0;
+    canSeePIN = !hasAssignment || effectiveWaiters.includes(restaurantUser.id);
+  }
 
   const label =
     session.type === "table" && session.table_number
@@ -69,6 +82,7 @@ export default async function SessionPage({
         canCreateOrders={canCreateOrders}
         canCloseBills={canCloseBills}
         canForceClose={canForceClose}
+        canSeePIN={canSeePIN}
       />
     </div>
   );

@@ -87,6 +87,7 @@ export async function submitCustomerOrder(
   if (itemsErr) return { error: "Failed to add items." };
 
   revalidatePath("/employee/queue");
+  revalidatePath(`/employee/session/${sessionId}`);
   return {};
 }
 

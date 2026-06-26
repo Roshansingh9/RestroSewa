@@ -9,6 +9,8 @@ export type NotificationRow = {
   status: string;
   table_id: string | null;
   table_number: string | null;
+  room_id: string | null;
+  room_number: string | null;
   session_id: string | null;
   created_at: string;
   acknowledged_at: string | null;
@@ -21,7 +23,7 @@ export async function getActiveNotifications(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = await (service as any)
     .from("notifications")
-    .select("id, type, status, table_id, session_id, created_at, acknowledged_at, restaurant_tables ( number )")
+    .select("id, type, status, table_id, room_id, session_id, created_at, acknowledged_at, restaurant_tables ( number ), rooms ( number )")
     .eq("restaurant_id", restaurantId)
     .in("status", ["new", "acknowledged"])
     .order("created_at", { ascending: false });
@@ -34,6 +36,8 @@ export async function getActiveNotifications(
     status: n.status ?? "new",
     table_id: n.table_id,
     table_number: n.restaurant_tables?.number ?? null,
+    room_id: n.room_id,
+    room_number: n.rooms?.number ?? null,
     session_id: n.session_id,
     created_at: n.created_at,
     acknowledged_at: n.acknowledged_at ?? null,

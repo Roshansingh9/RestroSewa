@@ -25,21 +25,36 @@ export default async function TablesPage() {
 
   const employees: EmployeeOption[] = (employeesResult.data as EmployeeOption[]) ?? [];
 
-  // Fetch many-to-many table assignments for these employees
+  // Fetch many-to-many table and table-group assignments for these employees
   const employeeIds = employees.map((e) => e.id);
   const assignedByTable: Record<string, string[]> = {};
+  const assignedByTableGroup: Record<string, string[]> = {};
   if (employeeIds.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: assignments } = await (service as any)
-      .from("restaurant_user_tables")
-      .select("restaurant_user_id, restaurant_table_id")
-      .in("restaurant_user_id", employeeIds);
-    for (const a of (assignments ?? []) as {
+    const [tableAssignRes, groupAssignRes] = await Promise.all([
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (service as any)
+        .from("restaurant_user_tables")
+        .select("restaurant_user_id, restaurant_table_id")
+        .in("restaurant_user_id", employeeIds),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (service as any)
+        .from("restaurant_user_table_groups")
+        .select("restaurant_user_id, table_group_id")
+        .in("restaurant_user_id", employeeIds),
+    ]);
+    for (const a of (tableAssignRes.data ?? []) as {
       restaurant_user_id: string;
       restaurant_table_id: string;
     }[]) {
       if (!assignedByTable[a.restaurant_table_id]) assignedByTable[a.restaurant_table_id] = [];
       assignedByTable[a.restaurant_table_id].push(a.restaurant_user_id);
+    }
+    for (const a of (groupAssignRes.data ?? []) as {
+      restaurant_user_id: string;
+      table_group_id: string;
+    }[]) {
+      if (!assignedByTableGroup[a.table_group_id]) assignedByTableGroup[a.table_group_id] = [];
+      assignedByTableGroup[a.table_group_id].push(a.restaurant_user_id);
     }
   }
 
@@ -62,6 +77,7 @@ export default async function TablesPage() {
         restaurantSlug={restaurantSlug ?? ""}
         employees={employees}
         assignedByTable={assignedByTable}
+        assignedByTableGroup={assignedByTableGroup}
       />
     </div>
   );

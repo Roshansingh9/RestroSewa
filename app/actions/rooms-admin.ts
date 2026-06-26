@@ -311,6 +311,41 @@ export async function regenerateRoomQr(roomId: string): Promise<ActionResult> {
   return null;
 }
 
+export async function setRoomTypeWaiters(
+  roomTypeId: string,
+  userIds: string[]
+): Promise<ActionResult> {
+  const ru = await getRestaurantUser();
+  if (!hasPermission(ru, PERMISSIONS.MANAGE_ROOMS)) return { error: "Permission denied." };
+
+  const service = createServiceClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: existing } = await (service as any)
+    .from("room_types")
+    .select("restaurant_id")
+    .eq("id", roomTypeId)
+    .maybeSingle();
+  if (!existing || existing.restaurant_id !== ru.restaurant_id)
+    return { error: "Permission denied." };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (service as any)
+    .from("restaurant_user_room_types")
+    .delete()
+    .eq("room_type_id", roomTypeId);
+
+  if (userIds.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (service as any)
+      .from("restaurant_user_room_types")
+      .insert(userIds.map((uid) => ({ restaurant_user_id: uid, room_type_id: roomTypeId })));
+    if (error) return { error: "Failed to save assignments." };
+  }
+
+  revalidatePath("/admin/rooms");
+  return null;
+}
+
 export async function setRoomWaiters(
   roomId: string,
   userIds: string[]

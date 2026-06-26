@@ -48,6 +48,11 @@ function NotifCard({ n }: { n: NotificationRow }) {
               Table {n.table_number}
             </span>
           )}
+          {!n.table_number && n.room_number && (
+            <span className="ml-2 text-xs font-normal" style={{ color: "var(--color-ink-mute)" }}>
+              Room {n.room_number}
+            </span>
+          )}
         </p>
         <p className="text-xs mt-0.5" style={{ color: "var(--color-ink-mute)" }}>
           {timeSince(n.created_at)}

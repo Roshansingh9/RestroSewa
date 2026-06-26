@@ -27,18 +27,30 @@ export default async function RoomsPage() {
 
   const employees: EmployeeOption[] = (employeesResult.data as EmployeeOption[]) ?? [];
 
-  // Fetch many-to-many room assignments for these employees
+  // Fetch many-to-many room and room-type assignments for these employees
   const employeeIds = employees.map((e) => e.id);
   const assignedByRoom: Record<string, string[]> = {};
+  const assignedByRoomType: Record<string, string[]> = {};
   if (employeeIds.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: assignments } = await (service as any)
-      .from("restaurant_user_rooms")
-      .select("restaurant_user_id, room_id")
-      .in("restaurant_user_id", employeeIds);
-    for (const a of (assignments ?? []) as { restaurant_user_id: string; room_id: string }[]) {
+    const [roomAssignRes, typeAssignRes] = await Promise.all([
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (service as any)
+        .from("restaurant_user_rooms")
+        .select("restaurant_user_id, room_id")
+        .in("restaurant_user_id", employeeIds),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (service as any)
+        .from("restaurant_user_room_types")
+        .select("restaurant_user_id, room_type_id")
+        .in("restaurant_user_id", employeeIds),
+    ]);
+    for (const a of (roomAssignRes.data ?? []) as { restaurant_user_id: string; room_id: string }[]) {
       if (!assignedByRoom[a.room_id]) assignedByRoom[a.room_id] = [];
       assignedByRoom[a.room_id].push(a.restaurant_user_id);
+    }
+    for (const a of (typeAssignRes.data ?? []) as { restaurant_user_id: string; room_type_id: string }[]) {
+      if (!assignedByRoomType[a.room_type_id]) assignedByRoomType[a.room_type_id] = [];
+      assignedByRoomType[a.room_type_id].push(a.restaurant_user_id);
     }
   }
 
@@ -61,6 +73,7 @@ export default async function RoomsPage() {
         restaurantSlug={restaurantSlug ?? ""}
         employees={employees}
         assignedByRoom={assignedByRoom}
+        assignedByRoomType={assignedByRoomType}
       />
     </div>
   );

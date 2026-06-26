@@ -4,7 +4,13 @@ import type { QueueItem } from "@/app/actions/pos";
 
 function QueueCard({ item }: { item: QueueItem }) {
   const isReady = item.item_status === "ready";
-  const label = item.table_number ? `T${item.table_number}` : item.session_type === "walk_in" ? "Walk-in" : "—";
+  const label = item.table_number
+    ? `T${item.table_number}`
+    : item.room_number
+    ? `R${item.room_number}`
+    : item.session_type === "walk_in"
+    ? "WI"
+    : "—";
 
   return (
     <div

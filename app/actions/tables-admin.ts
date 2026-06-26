@@ -242,6 +242,41 @@ export async function setTableWaiters(
   return null;
 }
 
+export async function setTableGroupWaiters(
+  groupId: string,
+  userIds: string[]
+): Promise<ActionResult> {
+  const ru = await getRestaurantUser();
+  if (!hasPermission(ru, PERMISSIONS.MANAGE_TABLES)) return { error: "Permission denied." };
+
+  const service = createServiceClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: existing } = await (service as any)
+    .from("table_groups")
+    .select("restaurant_id")
+    .eq("id", groupId)
+    .maybeSingle();
+  if (!existing || existing.restaurant_id !== ru.restaurant_id)
+    return { error: "Permission denied." };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (service as any)
+    .from("restaurant_user_table_groups")
+    .delete()
+    .eq("table_group_id", groupId);
+
+  if (userIds.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (service as any)
+      .from("restaurant_user_table_groups")
+      .insert(userIds.map((uid) => ({ restaurant_user_id: uid, table_group_id: groupId })));
+    if (error) return { error: "Failed to save assignments." };
+  }
+
+  revalidatePath("/admin/tables");
+  return null;
+}
+
 export async function getRestaurantSlug(restaurantId: string): Promise<string | null> {
   const service = createServiceClient();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -34,6 +34,8 @@ export type SessionDetail = {
   id: string;
   type: string;
   status: string;
+  table_id: string | null;
+  room_id: string | null;
   table_number: string | null;
   room_number: string | null;
   opened_at: string;
@@ -44,6 +46,7 @@ export type SessionDetail = {
 
 export type QueueItem = OrderItemRow & {
   table_number: string | null;
+  room_number: string | null;
   session_type: string | null;
 };
 
@@ -244,6 +247,10 @@ export async function getSessionDetail(
     id: session.id,
     type: session.type,
     status: session.status,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    table_id: (session as any).table_id ?? null,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    room_id: (session as any).room_id ?? null,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     table_number: (session as any).restaurant_tables?.number ?? null,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -493,6 +500,72 @@ export async function forceCloseSession(sessionId: string): Promise<ActionResult
   redirect("/employee/dashboard");
 }
 
+// ─── Effective Waiter Resolution ─────────────────────────────────────────────
+// Individual assignment overrides group/type. Returns [] if no restriction (anyone can see PIN).
+
+export async function getEffectiveWaiters(
+  tableId: string | null,
+  roomId: string | null
+): Promise<string[]> {
+  const service = createServiceClient();
+
+  if (tableId) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: individual } = await (service as any)
+      .from("restaurant_user_tables")
+      .select("restaurant_user_id")
+      .eq("restaurant_table_id", tableId);
+    if ((individual as { restaurant_user_id: string }[] | null)?.length) {
+      return (individual as { restaurant_user_id: string }[]).map((r) => r.restaurant_user_id);
+    }
+    // Fall back to group assignment
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: tbl } = await (service as any)
+      .from("restaurant_tables")
+      .select("group_id")
+      .eq("id", tableId)
+      .maybeSingle();
+    if (tbl?.group_id) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: grp } = await (service as any)
+        .from("restaurant_user_table_groups")
+        .select("restaurant_user_id")
+        .eq("table_group_id", tbl.group_id);
+      return ((grp as { restaurant_user_id: string }[] | null) ?? []).map((r) => r.restaurant_user_id);
+    }
+    return [];
+  }
+
+  if (roomId) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: individual } = await (service as any)
+      .from("restaurant_user_rooms")
+      .select("restaurant_user_id")
+      .eq("room_id", roomId);
+    if ((individual as { restaurant_user_id: string }[] | null)?.length) {
+      return (individual as { restaurant_user_id: string }[]).map((r) => r.restaurant_user_id);
+    }
+    // Fall back to room type assignment
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: rm } = await (service as any)
+      .from("rooms")
+      .select("room_type_id")
+      .eq("id", roomId)
+      .maybeSingle();
+    if (rm?.room_type_id) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: ta } = await (service as any)
+        .from("restaurant_user_room_types")
+        .select("restaurant_user_id")
+        .eq("room_type_id", rm.room_type_id);
+      return ((ta as { restaurant_user_id: string }[] | null) ?? []).map((r) => r.restaurant_user_id);
+    }
+    return [];
+  }
+
+  return [];
+}
+
 // ─── Workstation Queue ────────────────────────────────────────────────────────
 
 export async function getWorkstationQueue(
@@ -525,7 +598,7 @@ export async function getWorkstationQueue(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: sessions } = await (service as any)
     .from("sessions")
-    .select("id, type, table_id, restaurant_tables ( number )")
+    .select("id, type, table_id, room_id, restaurant_tables ( number ), rooms ( number )")
     .in("id", sessionIds)
     .eq("status", "active");
 
@@ -545,6 +618,7 @@ export async function getWorkstationQueue(
       return {
         ...item,
         table_number: session?.restaurant_tables?.number ?? null,
+        room_number: session?.rooms?.number ?? null,
         session_type: session?.type ?? null,
       };
     });

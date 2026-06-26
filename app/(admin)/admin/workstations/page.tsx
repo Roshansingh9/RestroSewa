@@ -4,7 +4,7 @@ import { getWorkstations } from "@/app/actions/workstations";
 import { WorkstationsClient } from "./_components/workstations-client";
 
 export default async function WorkstationsPage() {
-  const { restaurantUser } = await requireAdminOrPermission(PERMISSIONS.MANAGE_TABLES);
+  const { restaurantUser } = await requireAdminOrPermission(PERMISSIONS.MANAGE_MENU);
   const workstations = await getWorkstations(restaurantUser.restaurant_id);
 
   return (

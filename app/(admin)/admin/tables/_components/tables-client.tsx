@@ -9,6 +9,7 @@ import {
   deleteTable,
   regenerateTableQr,
   setTableWaiters,
+  setTableGroupWaiters,
 } from "@/app/actions/tables-admin";
 import type { ActionResult, GroupWithTables, TableRow } from "@/app/actions/tables-admin";
 import type { EmployeeOption } from "../page";
@@ -330,6 +331,73 @@ function TablePill({
   );
 }
 
+// ─── Group Waiter Bar ─────────────────────────────────────────────────────────
+
+function TableGroupWaiterBar({
+  groupId,
+  employees,
+  assignedUserIds,
+}: {
+  groupId: string;
+  employees: EmployeeOption[];
+  assignedUserIds: string[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [localAssigned, setLocalAssigned] = useState<string[]>(assignedUserIds);
+  const [, startAssign] = useTransition();
+
+  const assignedKey = [...assignedUserIds].sort().join(",");
+  useEffect(() => {
+    setLocalAssigned(assignedUserIds);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assignedKey]);
+
+  if (employees.length === 0) return null;
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      <button
+        type="button"
+        title={localAssigned.length > 0 ? `Group: ${localAssigned.length} waiter(s) assigned` : "Assign group waiter(s)"}
+        style={{ color: localAssigned.length > 0 ? "var(--color-primary)" : "var(--color-ink-mute)" }}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <UserRound size={12} />
+      </button>
+      {open && (
+        <div className="flex flex-wrap gap-1">
+          {employees.map((e) => {
+            const active = localAssigned.includes(e.id);
+            return (
+              <button
+                key={e.id}
+                type="button"
+                className="text-xs px-2 py-0.5 rounded-full border"
+                style={{
+                  background: active ? "rgba(99,102,241,0.08)" : "transparent",
+                  borderColor: active ? "var(--color-primary)" : "var(--color-hairline)",
+                  color: active ? "var(--color-primary)" : "var(--color-ink-mute)",
+                }}
+                onClick={() =>
+                  startAssign(async () => {
+                    const next = active
+                      ? localAssigned.filter((id) => id !== e.id)
+                      : [...localAssigned, e.id];
+                    setLocalAssigned(next);
+                    await setTableGroupWaiters(groupId, next);
+                  })
+                }
+              >
+                {e.display_name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Forms ────────────────────────────────────────────────────────────────────
 
 function AddTableForm({
@@ -406,6 +474,7 @@ export function TablesClient({
   restaurantSlug,
   employees,
   assignedByTable,
+  assignedByTableGroup,
 }: {
   ungrouped: TableRow[];
   groups: GroupWithTables[];
@@ -413,6 +482,7 @@ export function TablesClient({
   restaurantSlug: string;
   employees: EmployeeOption[];
   assignedByTable: Record<string, string[]>;
+  assignedByTableGroup: Record<string, string[]>;
 }) {
   const [qrTarget, setQrTarget] = useState<QrTarget>(null);
   const [, startRegen] = useTransition();
@@ -444,12 +514,19 @@ export function TablesClient({
         {/* Groups */}
         {groups.map((g) => (
           <div key={g.id}>
-            <p
-              className="text-xs uppercase tracking-wide mb-3 font-medium"
-              style={{ color: "var(--color-ink-mute)", letterSpacing: "0.06em" }}
-            >
-              {g.name}
-            </p>
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
+              <p
+                className="text-xs uppercase tracking-wide font-medium"
+                style={{ color: "var(--color-ink-mute)", letterSpacing: "0.06em" }}
+              >
+                {g.name}
+              </p>
+              <TableGroupWaiterBar
+                groupId={g.id}
+                employees={employees}
+                assignedUserIds={assignedByTableGroup[g.id] ?? []}
+              />
+            </div>
             <div className="flex flex-wrap gap-2 mb-3">
               {g.tables.map((t) => (
                 <TablePill key={t.id} table={t} groups={groups} employees={employees} assignedUserIds={assignedByTable[t.id] ?? []} onQrClick={handleQrClick} />

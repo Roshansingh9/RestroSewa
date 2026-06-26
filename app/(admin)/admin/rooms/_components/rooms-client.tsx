@@ -11,6 +11,7 @@ import {
   deleteRoom,
   regenerateRoomQr,
   setRoomWaiters,
+  setRoomTypeWaiters,
 } from "@/app/actions/rooms-admin";
 import type { ActionResult, RoomRow, RoomTypeWithRooms } from "@/app/actions/rooms-admin";
 import { Button } from "@/components/ui/button";
@@ -317,6 +318,73 @@ function RoomPill({
   );
 }
 
+// ─── Room Type Waiter Bar ─────────────────────────────────────────────────────
+
+function RoomTypeWaiterBar({
+  roomTypeId,
+  employees,
+  assignedUserIds,
+}: {
+  roomTypeId: string;
+  employees: EmployeeOption[];
+  assignedUserIds: string[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [localAssigned, setLocalAssigned] = useState<string[]>(assignedUserIds);
+  const [, startAssign] = useTransition();
+
+  const assignedKey = [...assignedUserIds].sort().join(",");
+  useEffect(() => {
+    setLocalAssigned(assignedUserIds);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assignedKey]);
+
+  if (employees.length === 0) return null;
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      <button
+        type="button"
+        title={localAssigned.length > 0 ? `Type: ${localAssigned.length} waiter(s) assigned` : "Assign type waiter(s)"}
+        style={{ color: localAssigned.length > 0 ? "var(--color-primary)" : "var(--color-ink-mute)" }}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <UserRound size={12} />
+      </button>
+      {open && (
+        <div className="flex flex-wrap gap-1">
+          {employees.map((e) => {
+            const active = localAssigned.includes(e.id);
+            return (
+              <button
+                key={e.id}
+                type="button"
+                className="text-xs px-2 py-0.5 rounded-full border"
+                style={{
+                  background: active ? "rgba(99,102,241,0.08)" : "transparent",
+                  borderColor: active ? "var(--color-primary)" : "var(--color-hairline)",
+                  color: active ? "var(--color-primary)" : "var(--color-ink-mute)",
+                }}
+                onClick={() =>
+                  startAssign(async () => {
+                    const next = active
+                      ? localAssigned.filter((id) => id !== e.id)
+                      : [...localAssigned, e.id];
+                    setLocalAssigned(next);
+                    await setRoomTypeWaiters(roomTypeId, next);
+                  })
+                }
+              >
+                {e.display_name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Room Type Section ────────────────────────────────────────────────────────
 
 function RoomTypeSection({
@@ -325,6 +393,7 @@ function RoomTypeSection({
   restaurantId,
   employees,
   assignedByRoom,
+  assignedByRoomType,
   onQrClick,
 }: {
   type: RoomTypeWithRooms;
@@ -332,6 +401,7 @@ function RoomTypeSection({
   restaurantId: string;
   employees: EmployeeOption[];
   assignedByRoom: Record<string, string[]>;
+  assignedByRoomType: Record<string, string[]>;
   onQrClick: (room: RoomRow) => void;
 }) {
   const [editingType, setEditingType] = useState(false);
@@ -387,7 +457,14 @@ function RoomTypeSection({
       ) : (
         <div className="flex items-start justify-between mb-4">
           <div>
-            <p className="font-medium text-sm" style={{ color: "var(--color-ink)" }}>{type.name}</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="font-medium text-sm" style={{ color: "var(--color-ink)" }}>{type.name}</p>
+              <RoomTypeWaiterBar
+                roomTypeId={type.id}
+                employees={employees}
+                assignedUserIds={assignedByRoomType[type.id] ?? []}
+              />
+            </div>
             <p className="text-xs mt-0.5" style={{ color: "var(--color-ink-mute)" }}>
               NPR {type.base_price.toLocaleString()} / night
               {type.description && ` · ${type.description}`}
@@ -471,6 +548,7 @@ export function RoomsClient({
   restaurantSlug,
   employees,
   assignedByRoom,
+  assignedByRoomType,
 }: {
   types: RoomTypeWithRooms[];
   totalRooms: number;
@@ -478,6 +556,7 @@ export function RoomsClient({
   restaurantSlug: string;
   employees: EmployeeOption[];
   assignedByRoom: Record<string, string[]>;
+  assignedByRoomType: Record<string, string[]>;
 }) {
   const [qrTarget, setQrTarget] = useState<QrTarget>(null);
   const [, startRegen] = useTransition();
@@ -523,6 +602,7 @@ export function RoomsClient({
             restaurantId={restaurantId}
             employees={employees}
             assignedByRoom={assignedByRoom}
+            assignedByRoomType={assignedByRoomType}
             onQrClick={handleQrClick}
           />
         ))}

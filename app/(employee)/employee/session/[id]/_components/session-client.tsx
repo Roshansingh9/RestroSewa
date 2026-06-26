@@ -295,11 +295,13 @@ export function SessionClient({
   canCreateOrders = false,
   canCloseBills = false,
   canForceClose = false,
+  canSeePIN = true,
 }: {
   session: SessionDetail;
   canCreateOrders?: boolean;
   canCloseBills?: boolean;
   canForceClose?: boolean;
+  canSeePIN?: boolean;
 }) {
   const [, startForceClose] = useTransition();
   const pendingItems = session.items.filter((i) => i.item_status !== "served");
@@ -321,7 +323,7 @@ export function SessionClient({
       )}
 
       {/* Customer ordering PIN */}
-      {!isClosed && session.customer_pin && (
+      {!isClosed && canSeePIN && session.customer_pin && (
         <div
           className="flex items-center gap-3 px-4 py-3 rounded-xl border"
           style={{ background: "#fef9c3", borderColor: "#ca8a0444" }}
