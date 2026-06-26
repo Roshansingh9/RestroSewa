@@ -302,9 +302,21 @@ export function SessionClient({
   const pendingItems = session.items.filter((i) => i.item_status !== "served");
   const servedItems  = session.items.filter((i) => i.item_status === "served");
   const isClosed     = session.status === "closed";
+  const locationLabel = session.table_number
+    ? `Table ${session.table_number}`
+    : session.room_number
+    ? `Room ${session.room_number}`
+    : session.type === "walk_in"
+    ? "Walk-in"
+    : null;
 
   return (
     <div className="flex flex-col gap-5 max-w-lg">
+      {/* Location label */}
+      {locationLabel && (
+        <p className="text-sm" style={{ color: "var(--color-ink-mute)" }}>{locationLabel}</p>
+      )}
+
       {/* Customer ordering PIN */}
       {!isClosed && session.customer_pin && (
         <div

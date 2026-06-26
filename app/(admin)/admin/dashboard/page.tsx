@@ -1,4 +1,4 @@
-import { requireRestaurantAdmin } from "@/lib/auth/guards";
+﻿import { requireRestaurantAdmin } from "@/lib/auth/guards";
 import { createServiceClient } from "@/lib/supabase/service";
 import Link from "next/link";
 import { BookOpen, LayoutGrid, Zap, Users } from "lucide-react";
@@ -115,7 +115,7 @@ export default async function AdminDashboardPage() {
   ];
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <h1
         className="text-xl mb-1"
         style={{ color: "var(--color-ink)", fontWeight: 300, letterSpacing: "-0.4px" }}
@@ -123,7 +123,7 @@ export default async function AdminDashboardPage() {
         Overview
       </h1>
       <p className="text-sm mb-8" style={{ color: "var(--color-ink-mute)" }}>
-        {restaurantUser.display_name} · Restaurant Admin
+        {restaurantUser.display_name} Â· Restaurant Admin
       </p>
 
       <div className="grid grid-cols-2 gap-3 max-w-xl">
@@ -156,7 +156,7 @@ export default async function AdminDashboardPage() {
                 background: "var(--color-canvas)",
               }}
             >
-              <span style={{ color: "var(--color-primary)" }}>→</span>
+              <span style={{ color: "var(--color-primary)" }}>â†’</span>
               {label}
             </Link>
           ))}

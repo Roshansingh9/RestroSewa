@@ -8,11 +8,13 @@ import {
   toggleTableStatus,
   deleteTable,
   regenerateTableQr,
+  assignWaiterToTable,
 } from "@/app/actions/tables-admin";
 import type { ActionResult, GroupWithTables, TableRow } from "@/app/actions/tables-admin";
+import type { EmployeeOption } from "../page";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { QrCode, Trash2, X, Download, Pencil, RefreshCw } from "lucide-react";
+import { QrCode, Trash2, X, Download, Pencil, RefreshCw, UserRound } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 
 // ─── QR Modal ─────────────────────────────────────────────────────────────────
@@ -132,15 +134,19 @@ function QrModal({
 function TablePill({
   table,
   groups,
+  employees,
   onQrClick,
 }: {
   table: TableRow;
   groups: GroupWithTables[];
+  employees: EmployeeOption[];
   onQrClick: (table: TableRow) => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
   const [, startToggle] = useTransition();
   const [, startDelete] = useTransition();
+  const [, startAssign] = useTransition();
   const [editState, editAction, editPending] = useActionState<ActionResult, FormData>(
     updateTable,
     null
@@ -217,52 +223,98 @@ function TablePill({
 
   return (
     <div
-      className="flex items-center gap-2 px-3 py-2 rounded-lg border text-sm"
+      className="flex flex-col rounded-lg border text-sm"
       style={{
         background: "var(--color-canvas)",
         borderColor: "var(--color-hairline)",
         opacity: table.is_active ? 1 : 0.5,
       }}
     >
-      <span style={{ color: "var(--color-ink)", fontWeight: 400 }}>T{table.number}</span>
-      <button
-        type="button"
-        title="Show QR code"
-        style={{ color: "var(--color-ink-mute)" }}
-        onClick={() => onQrClick(table)}
-      >
-        <QrCode size={13} />
-      </button>
-      <button
-        type="button"
-        title="Edit table"
-        style={{ color: "var(--color-ink-mute)" }}
-        onClick={() => setEditing(true)}
-      >
-        <Pencil size={12} />
-      </button>
-      <button
-        type="button"
-        className="text-xs"
-        style={{ color: table.is_active ? "#1a7a4a" : "var(--color-ink-mute)" }}
-        onClick={() => startToggle(async () => { await toggleTableStatus(table.id, !table.is_active); })}
-      >
-        {table.is_active ? "●" : "○"}
-      </button>
-      <button
-        type="button"
-        style={{ color: "var(--color-ink-mute)" }}
-        onClick={() =>
-          startDelete(async () => {
+      {/* Main row */}
+      <div className="flex items-center gap-2 px-3 py-2">
+        <span style={{ color: "var(--color-ink)", fontWeight: 400 }}>T{table.number}</span>
+        <button type="button" title="Show QR code" style={{ color: "var(--color-ink-mute)" }} onClick={() => onQrClick(table)}>
+          <QrCode size={13} />
+        </button>
+        <button type="button" title="Edit table" style={{ color: "var(--color-ink-mute)" }} onClick={() => setEditing(true)}>
+          <Pencil size={12} />
+        </button>
+        {employees.length > 0 && (
+          <button
+            type="button"
+            title={table.assigned_user_name ? `Assigned: ${table.assigned_user_name}` : "Assign waiter"}
+            style={{ color: table.assigned_user_id ? "var(--color-primary)" : "var(--color-ink-mute)" }}
+            onClick={() => setAssignOpen((o) => !o)}
+          >
+            <UserRound size={12} />
+          </button>
+        )}
+        <button
+          type="button"
+          className="text-xs"
+          style={{ color: table.is_active ? "#1a7a4a" : "var(--color-ink-mute)" }}
+          onClick={() => startToggle(async () => { await toggleTableStatus(table.id, !table.is_active); })}
+        >
+          {table.is_active ? "●" : "○"}
+        </button>
+        <button
+          type="button"
+          style={{ color: "var(--color-ink-mute)" }}
+          onClick={() => startDelete(async () => {
             if (confirm(`Delete table ${table.number}?`)) {
               const r = await deleteTable(table.id);
               if (r?.error) alert(r.error);
             }
-          })
-        }
-      >
-        <Trash2 size={12} />
-      </button>
+          })}
+        >
+          <Trash2 size={12} />
+        </button>
+      </div>
+
+      {/* Waiter assignment dropdown */}
+      {assignOpen && employees.length > 0 && (
+        <div
+          className="border-t px-3 pb-2 flex flex-col gap-1"
+          style={{ borderColor: "var(--color-hairline)" }}
+        >
+          <p className="text-xs pt-1.5" style={{ color: "var(--color-ink-mute)" }}>Assign waiter</p>
+          <div className="flex flex-wrap gap-1">
+            <button
+              type="button"
+              className="text-xs px-2 py-0.5 rounded-full border"
+              style={{
+                background: !table.assigned_user_id ? "var(--color-canvas-soft)" : "transparent",
+                borderColor: "var(--color-hairline)",
+                color: "var(--color-ink-mute)",
+              }}
+              onClick={() => startAssign(async () => {
+                await assignWaiterToTable(table.id, null);
+                setAssignOpen(false);
+              })}
+            >
+              None
+            </button>
+            {employees.map((e) => (
+              <button
+                key={e.id}
+                type="button"
+                className="text-xs px-2 py-0.5 rounded-full border"
+                style={{
+                  background: table.assigned_user_id === e.id ? "rgba(99,102,241,0.08)" : "transparent",
+                  borderColor: table.assigned_user_id === e.id ? "var(--color-primary)" : "var(--color-hairline)",
+                  color: table.assigned_user_id === e.id ? "var(--color-primary)" : "var(--color-ink-mute)",
+                }}
+                onClick={() => startAssign(async () => {
+                  await assignWaiterToTable(table.id, e.id);
+                  setAssignOpen(false);
+                })}
+              >
+                {e.display_name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -341,11 +393,13 @@ export function TablesClient({
   groups,
   restaurantId,
   restaurantSlug,
+  employees,
 }: {
   ungrouped: TableRow[];
   groups: GroupWithTables[];
   restaurantId: string;
   restaurantSlug: string;
+  employees: EmployeeOption[];
 }) {
   const [qrTarget, setQrTarget] = useState<QrTarget>(null);
   const [, startRegen] = useTransition();
@@ -385,7 +439,7 @@ export function TablesClient({
             </p>
             <div className="flex flex-wrap gap-2 mb-3">
               {g.tables.map((t) => (
-                <TablePill key={t.id} table={t} groups={groups} onQrClick={handleQrClick} />
+                <TablePill key={t.id} table={t} groups={groups} employees={employees} onQrClick={handleQrClick} />
               ))}
               {g.tables.length === 0 && (
                 <p className="text-xs" style={{ color: "var(--color-ink-mute)" }}>No tables in this group.</p>
@@ -408,7 +462,7 @@ export function TablesClient({
             )}
             <div className="flex flex-wrap gap-2 mb-3">
               {ungrouped.map((t) => (
-                <TablePill key={t.id} table={t} groups={groups} onQrClick={handleQrClick} />
+                <TablePill key={t.id} table={t} groups={groups} employees={employees} onQrClick={handleQrClick} />
               ))}
               {ungrouped.length === 0 && groups.length === 0 && (
                 <p className="text-sm" style={{ color: "var(--color-ink-mute)" }}>

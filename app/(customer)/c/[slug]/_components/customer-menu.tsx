@@ -22,12 +22,12 @@ const FOOD_TYPE_CONFIG = {
 
 function PinEntry({
   sessionId,
-  tableId,
+  cacheKey,
   onSuccess,
   onClose,
 }: {
   sessionId: string;
-  tableId: string;
+  cacheKey: string;
   onSuccess: () => void;
   onClose: () => void;
 }) {
@@ -46,9 +46,9 @@ function PinEntry({
         const result = await verifyCustomerPin(sessionId, next.join(""));
         if (result.success) {
           try {
-            localStorage.setItem(`rs_auth_${tableId}`, JSON.stringify({ sessionId }));
+            localStorage.setItem(`rs_auth_${cacheKey}`, JSON.stringify({ sessionId }));
           } catch {
-            // storage unavailable — still allow ordering for this session
+            // storage unavailable — ordering still works for this session
           }
           onSuccess();
         } else {
@@ -58,7 +58,7 @@ function PinEntry({
         }
       }
     },
-    [digits, verifying, sessionId, tableId, onSuccess]
+    [digits, verifying, sessionId, cacheKey, onSuccess]
   );
 
   const backspace = useCallback(() => {
@@ -79,7 +79,6 @@ function PinEntry({
         style={{ background: "var(--color-canvas)", maxWidth: 480 }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex items-start justify-between">
           <div>
             <p className="text-base font-medium" style={{ color: "var(--color-ink)" }}>
@@ -94,7 +93,6 @@ function PinEntry({
           </button>
         </div>
 
-        {/* Digit display */}
         <div className="flex justify-center gap-3">
           {[0, 1, 2, 3].map((i) => (
             <div
@@ -117,14 +115,12 @@ function PinEntry({
             {error}
           </p>
         )}
-
         {verifying && (
           <p className="text-center text-sm" style={{ color: "var(--color-ink-mute)" }}>
             Verifying…
           </p>
         )}
 
-        {/* Keypad */}
         <div className="grid grid-cols-3 gap-2">
           {KEYS.map((k, i) =>
             k === "" ? (
@@ -178,26 +174,26 @@ const NOTIF_LABELS: Record<
 function NotifyBar({
   restaurantId,
   tableId,
+  roomId,
+  isRoom,
   initialNotifState,
 }: {
   restaurantId: string;
   tableId: string | null;
+  roomId: string | null;
+  isRoom: boolean;
   initialNotifState: CustomerNotifState;
 }) {
   const [notifState, setNotifState] = useState<CustomerNotifState>(initialNotifState);
   const [, start] = useTransition();
 
-  if (!tableId) return null;
+  if (!tableId && !roomId) return null;
 
   function notify(type: "call_waiter" | "request_bill") {
-    // Already pending — ignore
     if (notifState[type]) return;
     start(async () => {
-      const result = await sendNotification(restaurantId, tableId, type);
-      if (!result?.alreadyPending && !result?.error) {
-        setNotifState((prev) => ({ ...prev, [type]: "new" }));
-      } else if (result?.alreadyPending) {
-        // Server says it's already active — reflect that
+      const result = await sendNotification(restaurantId, tableId, type, roomId);
+      if (!result?.error) {
         setNotifState((prev) => ({ ...prev, [type]: "new" }));
       }
     });
@@ -218,11 +214,12 @@ function NotifyBar({
         type="button"
         onClick={() => notify(type)}
         disabled={pending}
-        className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-lg text-sm font-medium transition-opacity"
+        className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-lg text-sm font-medium"
         style={{
           ...baseStyle,
-          opacity: pending ? 0.65 : 1,
-          cursor: pending ? "not-allowed" : "pointer",
+          minHeight: 52,
+          opacity: pending ? 0.7 : 1,
+          cursor: pending ? "default" : "pointer",
         }}
       >
         <span className="flex items-center gap-1.5">
@@ -230,7 +227,7 @@ function NotifyBar({
           {pending ? statusLabel : label}
         </span>
         {pending && (
-          <span className="text-xs font-normal" style={{ opacity: 0.7 }}>
+          <span className="text-xs font-normal" style={{ opacity: 0.65 }}>
             {status === "acknowledged" ? "✓ Accepted" : "pending"}
           </span>
         )}
@@ -250,7 +247,7 @@ function NotifyBar({
       {renderButton(
         "call_waiter",
         <Bell size={14} />,
-        "Call waiter",
+        isRoom ? "Call staff" : "Call waiter",
         { background: "var(--color-canvas-soft)", color: "var(--color-ink)" }
       )}
       {renderButton(
@@ -265,26 +262,32 @@ function NotifyBar({
 
 // ─── Cart Bar ─────────────────────────────────────────────────────────────────
 
+const NOTIFY_BAR_H = 74; // px: py-3 (24) + min-h-[52px] button
+const CART_BAR_H   = 64; // px: py-3 (24) + button height
+
 function CartBar({
   itemCount,
   total,
   onPlace,
   placing,
   success,
+  hasNotifyBar,
 }: {
   itemCount: number;
   total: number;
   onPlace: () => void;
   placing: boolean;
   success: boolean;
+  hasNotifyBar: boolean;
 }) {
   if (itemCount === 0 && !success) return null;
+  const bottom = hasNotifyBar ? NOTIFY_BAR_H : 0;
 
   return (
     <div
       className="fixed left-0 right-0 px-4 py-3 border-t"
       style={{
-        bottom: 61,
+        bottom,
         background: "var(--color-primary)",
         borderColor: "rgba(255,255,255,0.15)",
       }}
@@ -427,6 +430,9 @@ export function CustomerMenu({
   restaurantId,
   restaurantName,
   tableId,
+  tableNumber,
+  roomId,
+  roomNumber,
   sessionId,
   orderingEnabled,
   qrMode,
@@ -437,6 +443,9 @@ export function CustomerMenu({
   restaurantId: string;
   restaurantName: string;
   tableId: string | null;
+  tableNumber: string | null;
+  roomId: string | null;
+  roomNumber: string | null;
   sessionId: string | null;
   orderingEnabled: boolean;
   qrMode: string;
@@ -444,9 +453,16 @@ export function CustomerMenu({
   items: MenuItemRow[];
   initialNotifState: CustomerNotifState;
 }) {
-  // Ordering is active only when all conditions are met
+  const isRoom = !!roomId;
+  const contextId = tableId ?? roomId ?? null;
+  const locationLabel = tableNumber
+    ? `Table ${tableNumber}`
+    : roomNumber
+    ? `Room ${roomNumber}`
+    : null;
+
   const orderingAvailable =
-    orderingEnabled && qrMode === "ordering_enabled" && !!sessionId && !!tableId;
+    orderingEnabled && qrMode === "ordering_enabled" && !!sessionId && !!contextId;
 
   const [activeCategoryId, setActiveCategoryId] = useState<string>(
     categories[0]?.id ?? ""
@@ -458,6 +474,9 @@ export function CustomerMenu({
   const [placing, setPlacing] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
 
+  // localStorage cache key is based on table or room
+  const cacheKey = contextId ?? "";
+
   const workstationNameMap = useMemo(
     () => new Map<string, string>(categories.map((c) => [c.workstation_id, c.workstation_name ?? ""])),
     [categories]
@@ -465,20 +484,20 @@ export function CustomerMenu({
 
   // Restore PIN auth from localStorage on mount
   useEffect(() => {
-    if (!tableId || !sessionId) return;
+    if (!contextId || !sessionId) return;
     try {
-      const stored = localStorage.getItem(`rs_auth_${tableId}`);
+      const stored = localStorage.getItem(`rs_auth_${cacheKey}`);
       if (!stored) return;
       const parsed = JSON.parse(stored) as { sessionId?: string };
       if (parsed.sessionId !== sessionId) return;
       checkSessionActive(sessionId).then((r) => {
         if (r.active) setPinVerified(true);
-        else localStorage.removeItem(`rs_auth_${tableId}`);
+        else localStorage.removeItem(`rs_auth_${cacheKey}`);
       });
     } catch {
-      // ignore parse/storage errors
+      // ignore
     }
-  }, [tableId, sessionId]);
+  }, [contextId, sessionId, cacheKey]);
 
   const handleAdd = useCallback(
     (item: MenuItemRow) => {
@@ -533,16 +552,14 @@ export function CustomerMenu({
     const orderItems: CustomerCartItem[] = cartEntries.flatMap(([id, qty]) => {
       const item = items.find((i) => i.id === id);
       if (!item) return [];
-      return [
-        {
-          menu_item_id: id,
-          item_name: item.name,
-          item_price: Number(item.price),
-          workstation_id: item.workstation_id,
-          workstation_name: workstationNameMap.get(item.workstation_id) ?? "",
-          quantity: qty,
-        },
-      ];
+      return [{
+        menu_item_id: id,
+        item_name: item.name,
+        item_price: Number(item.price),
+        workstation_id: item.workstation_id,
+        workstation_name: workstationNameMap.get(item.workstation_id) ?? "",
+        quantity: qty,
+      }];
     });
     const result = await submitCustomerOrder(sessionId, restaurantId, orderItems);
     if (result.error) {
@@ -556,11 +573,12 @@ export function CustomerMenu({
   }
 
   const visibleItems = items.filter((i) => i.category_id === activeCategoryId);
-  const bottomPad = tableId
-    ? cartCount > 0 || orderSuccess
-      ? 130
-      : 68
-    : 16;
+  const hasNotifyBar = !!contextId;
+  const hasCartBar = orderingAvailable && (cartCount > 0 || orderSuccess);
+
+  let bottomPad = 16;
+  if (hasNotifyBar) bottomPad = NOTIFY_BAR_H + 8;
+  if (hasCartBar) bottomPad += CART_BAR_H + 8;
 
   return (
     <div
@@ -568,10 +586,10 @@ export function CustomerMenu({
       style={{ background: "var(--color-canvas)", paddingBottom: bottomPad }}
     >
       {/* PIN entry overlay */}
-      {showPinEntry && orderingAvailable && sessionId && tableId && (
+      {showPinEntry && orderingAvailable && sessionId && contextId && (
         <PinEntry
           sessionId={sessionId}
-          tableId={tableId}
+          cacheKey={cacheKey}
           onSuccess={handlePinSuccess}
           onClose={() => {
             setShowPinEntry(false);
@@ -589,23 +607,32 @@ export function CustomerMenu({
           {restaurantName}
         </h1>
 
-        {tableId && (
-          <p className="text-xs mt-1" style={{ color: "var(--color-ink-mute)" }}>
-            {orderingAvailable
-              ? pinVerified
-                ? "Ordering enabled — add items to your cart below"
-                : "Browse our menu · Ask your waiter for a PIN to order"
-              : "Browse our menu · Use the buttons below to call staff"}
+        {locationLabel && (
+          <p
+            className="text-sm mt-1 font-medium"
+            style={{ color: "var(--color-ink)" }}
+          >
+            {locationLabel}
           </p>
         )}
 
-        {tableId && orderingEnabled && qrMode === "view_only" && (
+        {contextId && (
+          <p className="text-xs mt-0.5" style={{ color: "var(--color-ink-mute)" }}>
+            {orderingAvailable
+              ? pinVerified
+                ? "Ordering enabled — add items to your cart below"
+                : `Browse our menu · Ask ${isRoom ? "the front desk" : "your waiter"} for a PIN to order`
+              : `Browse our menu · Use the buttons below to call ${isRoom ? "staff" : "staff"}`}
+          </p>
+        )}
+
+        {contextId && orderingEnabled && qrMode === "view_only" && (
           <div
             className="inline-flex items-center gap-1.5 mt-2 px-3 py-1 rounded-full text-xs"
             style={{ background: "#f1f5f9", color: "var(--color-ink-mute)" }}
           >
             <Lock size={11} />
-            View only — ask your waiter to place your order
+            View only — ask {isRoom ? "the front desk" : "your waiter"} to place your order
           </div>
         )}
 
@@ -624,11 +651,12 @@ export function CustomerMenu({
 
       {/* Category tabs */}
       <div
-        className="flex gap-1 overflow-x-auto px-4 py-2.5 border-b sticky top-0"
+        className="flex gap-1 overflow-x-auto px-4 py-2.5 border-b sticky top-0 z-10"
         style={{
           background: "var(--color-canvas)",
           borderColor: "var(--color-hairline)",
           WebkitOverflowScrolling: "touch",
+          scrollbarWidth: "none",
         }}
       >
         {categories.map((c) => (
@@ -674,7 +702,7 @@ export function CustomerMenu({
         )}
       </div>
 
-      {/* Cart bar (above notify bar) */}
+      {/* Cart bar (stacked above notify bar) */}
       {orderingAvailable && (
         <CartBar
           itemCount={cartCount}
@@ -682,11 +710,18 @@ export function CustomerMenu({
           onPlace={placeOrder}
           placing={placing}
           success={orderSuccess}
+          hasNotifyBar={hasNotifyBar}
         />
       )}
 
       {/* Notify bar */}
-      <NotifyBar restaurantId={restaurantId} tableId={tableId} initialNotifState={initialNotifState} />
+      <NotifyBar
+        restaurantId={restaurantId}
+        tableId={tableId}
+        roomId={roomId}
+        isRoom={isRoom}
+        initialNotifState={initialNotifState}
+      />
     </div>
   );
 }

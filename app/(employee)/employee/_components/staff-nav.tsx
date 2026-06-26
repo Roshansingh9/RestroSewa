@@ -26,25 +26,30 @@ export function StaffNav({
 
   return (
     <header
-      className="flex items-center gap-4 px-5 py-3 border-b"
+      className="flex items-center gap-2 px-3 sm:px-5 py-3 border-b"
       style={{
         background: "var(--color-brand-dark)",
         borderColor: "rgba(255,255,255,0.08)",
       }}
     >
+      {/* Brand / user info */}
       <div className="flex-1 min-w-0">
         <span
           className="text-sm font-medium truncate block"
           style={{ color: "#fff", letterSpacing: "-0.2px" }}
         >
-          {restaurantName}
+          <span className="hidden sm:inline">{restaurantName}</span>
+          <span className="sm:hidden" style={{ color: "rgba(255,255,255,0.6)", fontWeight: 300 }}>
+            {displayName}
+          </span>
         </span>
-        <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>
+        <span className="text-xs hidden sm:block" style={{ color: "rgba(255,255,255,0.4)" }}>
           {displayName}
         </span>
       </div>
 
-      <nav className="flex items-center gap-1">
+      {/* Nav */}
+      <nav className="flex items-center gap-0.5">
         {NAV.map(({ label, href, icon: Icon, exact }) => {
           const active = exact ? pathname === href : pathname.startsWith(href);
           const showBadge = label === "Notifications" && notificationCount > 0;
@@ -52,14 +57,15 @@ export function StaffNav({
             <Link
               key={href}
               href={href}
-              className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors"
+              className="relative flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-sm transition-colors"
               style={{
                 color: active ? "#fff" : "rgba(255,255,255,0.5)",
                 background: active ? "rgba(255,255,255,0.1)" : "transparent",
               }}
             >
-              <Icon size={14} strokeWidth={1.5} />
-              {label}
+              <Icon size={15} strokeWidth={1.5} />
+              {/* Label hidden on very small screens */}
+              <span className="hidden xs:inline sm:inline">{label}</span>
               {showBadge && (
                 <span
                   className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full text-[10px] font-medium flex items-center justify-center"
@@ -73,15 +79,16 @@ export function StaffNav({
         })}
       </nav>
 
+      {/* Logout */}
       <button
         type="button"
         disabled={pending}
         onClick={() => startTransition(async () => { await logout(); })}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm"
+        className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-sm"
         style={{ color: "rgba(255,255,255,0.4)" }}
       >
         <LogOut size={14} strokeWidth={1.5} />
-        {pending ? "…" : "Out"}
+        <span className="hidden sm:inline">{pending ? "…" : "Out"}</span>
       </button>
     </header>
   );

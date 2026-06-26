@@ -34,10 +34,10 @@ export default async function CustomerMenuPage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ table?: string }>;
+  searchParams: Promise<{ table?: string; room?: string }>;
 }) {
   const { slug } = await params;
-  const { table: tableQrToken } = await searchParams;
+  const { table: tableQrToken, room: roomQrToken } = await searchParams;
 
   const service = createServiceClient();
 
@@ -53,15 +53,16 @@ export default async function CustomerMenuPage({
   const orderingEnabled: boolean = restaurant.customer_ordering_enabled ?? true;
   const qrMode: string = restaurant.qr_mode ?? "ordering_enabled";
 
-  // Resolve table + active session if QR token provided
+  // ── Table context ──
   let tableId: string | null = null;
+  let tableNumber: string | null = null;
   let sessionId: string | null = null;
 
   if (tableQrToken) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: table } = await (service as any)
       .from("restaurant_tables")
-      .select("id")
+      .select("id, number")
       .eq("restaurant_id", restaurant.id)
       .eq("qr_token", tableQrToken)
       .eq("is_active", true)
@@ -69,6 +70,7 @@ export default async function CustomerMenuPage({
 
     if (table) {
       tableId = table.id;
+      tableNumber = table.number;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: activeSession } = await (service as any)
         .from("sessions")
@@ -82,9 +84,38 @@ export default async function CustomerMenuPage({
     }
   }
 
+  // ── Room context ──
+  let roomId: string | null = null;
+  let roomNumber: string | null = null;
+
+  if (roomQrToken && !tableQrToken) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: room } = await (service as any)
+      .from("rooms")
+      .select("id, number")
+      .eq("restaurant_id", restaurant.id)
+      .eq("qr_token", roomQrToken)
+      .maybeSingle();
+
+    if (room) {
+      roomId = room.id;
+      roomNumber = room.number;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: activeRoomSession } = await (service as any)
+        .from("sessions")
+        .select("id")
+        .eq("restaurant_id", restaurant.id)
+        .eq("room_id", roomId)
+        .eq("status", "active")
+        .not("customer_pin", "is", null)
+        .maybeSingle();
+      sessionId = activeRoomSession?.id ?? null;
+    }
+  }
+
   const [categories, initialNotifState] = await Promise.all([
     getMenuCategories(restaurant.id),
-    getCustomerNotifState(restaurant.id, tableId),
+    getCustomerNotifState(restaurant.id, tableId, roomId),
   ]);
 
   const activeCategories = categories.filter((c) => c.is_active);
@@ -101,6 +132,9 @@ export default async function CustomerMenuPage({
       restaurantId={restaurant.id}
       restaurantName={restaurant.name}
       tableId={tableId}
+      tableNumber={tableNumber}
+      roomId={roomId}
+      roomNumber={roomNumber}
       sessionId={sessionId}
       orderingEnabled={orderingEnabled}
       qrMode={qrMode}

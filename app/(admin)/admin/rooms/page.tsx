@@ -1,4 +1,4 @@
-import { requireAdminOrPermission } from "@/lib/auth/guards";
+﻿import { requireAdminOrPermission } from "@/lib/auth/guards";
 import { PERMISSIONS } from "@/lib/permissions";
 import { getRoomTypesWithRooms } from "@/app/actions/rooms-admin";
 import { getRestaurantSlug } from "@/app/actions/tables-admin";
@@ -14,7 +14,7 @@ export default async function RoomsPage() {
   ]);
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <h1
         className="text-xl mb-1"
         style={{ color: "var(--color-ink)", fontWeight: 300, letterSpacing: "-0.4px" }}

@@ -1,4 +1,4 @@
-import { requireAdminOrPermission } from "@/lib/auth/guards";
+﻿import { requireAdminOrPermission } from "@/lib/auth/guards";
 import { PERMISSIONS } from "@/lib/permissions";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getWorkstations } from "@/app/actions/workstations";
@@ -58,7 +58,7 @@ export default async function AdminStaffPage() {
   const canAssignWorkstations = restaurantUser.role === "restaurant_admin";
 
   return (
-    <div className="p-8 max-w-2xl">
+    <div className="p-4 md:p-8 max-w-2xl">
       <h1
         className="text-xl mb-1"
         style={{ color: "var(--color-ink)", fontWeight: 300, letterSpacing: "-0.4px" }}
@@ -107,7 +107,7 @@ export default async function AdminStaffPage() {
                         {s.title}
                       </p>
                     )}
-                    {/* Workstation assignment — employees only, admins skip all workstations */}
+                    {/* Workstation assignment â€” employees only, admins skip all workstations */}
                     {s.role === "restaurant_employee" && canAssignWorkstations && (
                       <div className="mt-1.5">
                         <p className="text-xs mb-1" style={{ color: "var(--color-ink-mute)" }}>

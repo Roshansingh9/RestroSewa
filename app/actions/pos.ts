@@ -35,6 +35,7 @@ export type SessionDetail = {
   type: string;
   status: string;
   table_number: string | null;
+  room_number: string | null;
   opened_at: string;
   customer_pin: string | null;
   items: OrderItemRow[];
@@ -143,6 +144,40 @@ export async function openTableSession(tableId: string) {
   redirect(`/employee/session/${session.id}`);
 }
 
+export async function openRoomSession(roomId: string) {
+  const ru = await getRestaurantUser();
+  const service = createServiceClient();
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: existing } = await (service as any)
+    .from("sessions")
+    .select("id")
+    .eq("restaurant_id", ru.restaurant_id)
+    .eq("room_id", roomId)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (existing) {
+    redirect(`/employee/session/${existing.id}`);
+  }
+
+  const customer_pin = String(Math.floor(1000 + Math.random() * 9000));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: session, error } = await (service as any)
+    .from("sessions")
+    .insert({
+      restaurant_id: ru.restaurant_id,
+      type: "room_service",
+      room_id: roomId,
+      customer_pin,
+    })
+    .select("id")
+    .single();
+
+  if (error) return { error: error.message };
+  redirect(`/employee/session/${session.id}`);
+}
+
 export async function openWalkInSession() {
   const ru = await getRestaurantUser();
   const service = createServiceClient();
@@ -173,7 +208,7 @@ export async function getSessionDetail(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: session } = await (service as any)
     .from("sessions")
-    .select(`id, type, status, opened_at, customer_pin, table_id, restaurant_tables ( number )`)
+    .select(`id, type, status, opened_at, customer_pin, table_id, room_id, restaurant_tables ( number ), rooms ( number )`)
     .eq("id", sessionId)
     .maybeSingle();
 
@@ -211,6 +246,8 @@ export async function getSessionDetail(
     status: session.status,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     table_number: (session as any).restaurant_tables?.number ?? null,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    room_number: (session as any).rooms?.number ?? null,
     opened_at: session.opened_at,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     customer_pin: (session as any).customer_pin ?? null,
@@ -344,6 +381,8 @@ export async function closeSessionWithPayment(
     .update({ status: "closed", closed_at: new Date().toISOString() })
     .eq("id", sessionId);
 
+  revalidatePath("/employee/dashboard");
+  revalidatePath(`/employee/session/${sessionId}`);
   redirect("/employee/dashboard");
 }
 

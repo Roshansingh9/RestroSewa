@@ -14,6 +14,8 @@ export type TableRow = {
   group_id: string | null;
   qr_token: string;
   is_active: boolean;
+  assigned_user_id: string | null;
+  assigned_user_name: string | null;
 };
 
 export type GroupWithTables = TableGroupRow & { tables: TableRow[] };
@@ -34,11 +36,20 @@ export async function getTablesWithGroups(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: tables } = await (service as any)
     .from("restaurant_tables")
-    .select("id, number, group_id, qr_token, is_active")
+    .select("id, number, group_id, qr_token, is_active, assigned_user_id, restaurant_users ( display_name )")
     .eq("restaurant_id", restaurantId)
     .order("number");
 
-  const allTables = (tables as TableRow[]) ?? [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const allTables: TableRow[] = ((tables as any[]) ?? []).map((t) => ({
+    id: t.id,
+    number: t.number,
+    group_id: t.group_id,
+    qr_token: t.qr_token,
+    is_active: t.is_active,
+    assigned_user_id: t.assigned_user_id ?? null,
+    assigned_user_name: t.restaurant_users?.display_name ?? null,
+  }));
   const allGroups = (groups as TableGroupRow[]) ?? [];
 
   const ungrouped = allTables.filter((t) => !t.group_id);
@@ -202,6 +213,34 @@ export async function regenerateTableQr(tableId: string): Promise<ActionResult> 
     .update({ qr_token: crypto.randomUUID() })
     .eq("id", tableId);
   if (error) return { error: error.message };
+  revalidatePath("/admin/tables");
+  return null;
+}
+
+export async function assignWaiterToTable(
+  tableId: string,
+  userId: string | null
+): Promise<ActionResult> {
+  const ru = await getRestaurantUser();
+  if (!hasPermission(ru, PERMISSIONS.MANAGE_TABLES)) return { error: "Permission denied." };
+
+  const service = createServiceClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: existing } = await (service as any)
+    .from("restaurant_tables")
+    .select("restaurant_id")
+    .eq("id", tableId)
+    .maybeSingle();
+  if (!existing || existing.restaurant_id !== ru.restaurant_id)
+    return { error: "Permission denied." };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (service as any)
+    .from("restaurant_tables")
+    .update({ assigned_user_id: userId })
+    .eq("id", tableId);
+
+  if (error) return { error: "Failed to update assignment." };
   revalidatePath("/admin/tables");
   return null;
 }

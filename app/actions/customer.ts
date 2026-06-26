@@ -99,19 +99,23 @@ export type CustomerNotifState = {
 
 export async function getCustomerNotifState(
   restaurantId: string,
-  tableId: string | null
+  tableId: string | null,
+  roomId?: string | null
 ): Promise<CustomerNotifState> {
-  if (!tableId) return { call_waiter: null, request_bill: null };
+  if (!tableId && !roomId) return { call_waiter: null, request_bill: null };
   const service = createServiceClient();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data } = await (service as any)
+  let query = (service as any)
     .from("notifications")
     .select("type, status")
     .eq("restaurant_id", restaurantId)
-    .eq("table_id", tableId)
     .in("type", ["call_waiter", "request_bill"])
     .in("status", ["new", "acknowledged"]);
 
+  if (tableId) query = query.eq("table_id", tableId);
+  else if (roomId) query = query.eq("room_id", roomId);
+
+  const { data } = await query;
   const rows = (data ?? []) as { type: string; status: string }[];
   const find = (t: string) =>
     (rows.find((r) => r.type === t)?.status as NotificationStatus) ?? null;
@@ -122,42 +126,47 @@ export async function getCustomerNotifState(
 export async function sendNotification(
   restaurantId: string,
   tableId: string | null,
-  type: "call_waiter" | "request_bill"
+  type: "call_waiter" | "request_bill",
+  roomId?: string | null
 ): Promise<{ error?: string; alreadyPending?: boolean }> {
   const service = createServiceClient();
 
-  // Prevent duplicate active notifications of the same type for this table
-  if (tableId) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: existing } = await (service as any)
-      .from("notifications")
-      .select("id")
-      .eq("restaurant_id", restaurantId)
-      .eq("table_id", tableId)
-      .eq("type", type)
-      .in("status", ["new", "acknowledged"])
-      .maybeSingle();
-    if (existing) return { alreadyPending: true };
-  }
+  const contextId = tableId ?? roomId ?? null;
+  if (!contextId) return { error: "No table or room context." };
 
-  // Find active session for this table (if any)
+  // Prevent duplicate active notifications of the same type
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let dupQuery = (service as any)
+    .from("notifications")
+    .select("id")
+    .eq("restaurant_id", restaurantId)
+    .eq("type", type)
+    .in("status", ["new", "acknowledged"]);
+  if (tableId) dupQuery = dupQuery.eq("table_id", tableId);
+  else if (roomId) dupQuery = dupQuery.eq("room_id", roomId);
+
+  const { data: existing } = await dupQuery.maybeSingle();
+  if (existing) return { alreadyPending: true };
+
+  // Find active session for this table/room (if any)
   let sessionId: string | null = null;
-  if (tableId) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: session } = await (service as any)
-      .from("sessions")
-      .select("id")
-      .eq("restaurant_id", restaurantId)
-      .eq("table_id", tableId)
-      .eq("status", "active")
-      .maybeSingle();
-    sessionId = session?.id ?? null;
-  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let sessionQuery = (service as any)
+    .from("sessions")
+    .select("id")
+    .eq("restaurant_id", restaurantId)
+    .eq("status", "active");
+  if (tableId) sessionQuery = sessionQuery.eq("table_id", tableId);
+  else if (roomId) sessionQuery = sessionQuery.eq("room_id", roomId);
+
+  const { data: session } = await sessionQuery.maybeSingle();
+  sessionId = session?.id ?? null;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (service as any).from("notifications").insert({
     restaurant_id: restaurantId,
-    table_id: tableId,
+    table_id: tableId ?? null,
+    room_id: roomId ?? null,
     session_id: sessionId,
     type,
     status: "new",
