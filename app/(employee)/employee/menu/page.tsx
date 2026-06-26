@@ -1,12 +1,12 @@
-﻿import { requireRestaurantAdmin } from "@/lib/auth/guards";
+import { requireAdminOrPermission } from "@/lib/auth/guards";
+import { PERMISSIONS } from "@/lib/permissions";
 import { getMenuCategories, getMenuItemsByCategory } from "@/app/actions/menu";
 import { getWorkstations } from "@/app/actions/workstations";
-import { MenuClient } from "./_components/menu-client";
+import { MenuClient } from "@/app/(admin)/admin/menu/_components/menu-client";
 import type { MenuItemRow } from "@/app/actions/menu";
-import Link from "next/link";
 
-export default async function MenuPage() {
-  const { restaurantUser } = await requireRestaurantAdmin();
+export default async function EmployeeMenuPage() {
+  const { restaurantUser } = await requireAdminOrPermission(PERMISSIONS.MANAGE_MENU);
   const { restaurant_id } = restaurantUser;
 
   const [categories, workstations] = await Promise.all([
@@ -14,7 +14,6 @@ export default async function MenuPage() {
     getWorkstations(restaurant_id),
   ]);
 
-  // Fetch items for all categories
   const itemsByCategory = await Promise.all(
     categories.map((c) => getMenuItemsByCategory(restaurant_id, c.id))
   );
@@ -29,15 +28,9 @@ export default async function MenuPage() {
         Menu
       </h1>
       <p className="text-sm mb-8" style={{ color: "var(--color-ink-mute)" }}>
-        Manage categories and items.{" "}
-        {workstations.length === 0 && (
-          <>
-            <Link href="/admin/workstations" style={{ color: "var(--color-primary)" }}>
-              Set up workstations
-            </Link>{" "}
-            before adding categories.
-          </>
-        )}
+        {workstations.length === 0
+          ? "No workstations configured yet — ask your admin to set them up before adding categories."
+          : "Manage categories and items."}
       </p>
 
       <MenuClient

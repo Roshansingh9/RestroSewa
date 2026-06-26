@@ -157,6 +157,7 @@ export async function createCategory(
 
   if (error) return { error: error.message };
   revalidatePath("/admin/menu");
+  revalidatePath("/employee/menu");
   return null;
 }
 
@@ -192,6 +193,7 @@ export async function updateCategory(
 
   if (error) return { error: error.message };
   revalidatePath("/admin/menu");
+  revalidatePath("/employee/menu");
   return null;
 }
 
@@ -202,6 +204,7 @@ export async function toggleCategoryStatus(id: string, isActive: boolean) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await (service as any).from("menu_categories").update({ is_active: isActive }).eq("id", id);
   revalidatePath("/admin/menu");
+  revalidatePath("/employee/menu");
 }
 
 export async function deleteCategory(id: string): Promise<ActionResult> {
@@ -215,6 +218,7 @@ export async function deleteCategory(id: string): Promise<ActionResult> {
     return { error: error.message };
   }
   revalidatePath("/admin/menu");
+  revalidatePath("/employee/menu");
   return null;
 }
 
@@ -281,6 +285,7 @@ export async function createMenuItem(
 
   if (error) return { error: error.message };
   revalidatePath("/admin/menu");
+  revalidatePath("/employee/menu");
   return null;
 }
 
@@ -349,6 +354,7 @@ export async function updateMenuItem(
 
   if (error) return { error: error.message };
   revalidatePath("/admin/menu");
+  revalidatePath("/employee/menu");
   return null;
 }
 
@@ -363,6 +369,7 @@ export async function softDeleteMenuItem(id: string): Promise<ActionResult> {
     .eq("id", id);
   if (error) return { error: error.message };
   revalidatePath("/admin/menu");
+  revalidatePath("/employee/menu");
   return null;
 }
 
@@ -376,6 +383,7 @@ export async function toggleItemAvailability(id: string, isAvailable: boolean) {
     availability_status: isAvailable ? "available" : "out_of_stock",
   }).eq("id", id);
   revalidatePath("/admin/menu");
+  revalidatePath("/employee/menu");
 }
 
 // ─── Variants ─────────────────────────────────────────────────────────────────
@@ -428,6 +436,7 @@ export async function createVariant(
 
   if (error) return { error: error.message };
   revalidatePath("/admin/menu");
+  revalidatePath("/employee/menu");
   return null;
 }
 
@@ -439,6 +448,7 @@ export async function deleteVariant(id: string): Promise<ActionResult> {
   const { error } = await (service as any).from("menu_item_variants").delete().eq("id", id);
   if (error) return { error: error.message };
   revalidatePath("/admin/menu");
+  revalidatePath("/employee/menu");
   return null;
 }
 
@@ -467,6 +477,7 @@ export async function createAddon(
 
   if (error) return { error: error.message };
   revalidatePath("/admin/menu");
+  revalidatePath("/employee/menu");
   return null;
 }
 
@@ -478,5 +489,6 @@ export async function deleteAddon(id: string): Promise<ActionResult> {
   const { error } = await (service as any).from("menu_item_addons").delete().eq("id", id);
   if (error) return { error: error.message };
   revalidatePath("/admin/menu");
+  revalidatePath("/employee/menu");
   return null;
 }

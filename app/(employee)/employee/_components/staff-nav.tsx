@@ -24,7 +24,7 @@ export function StaffNav({
   canManageMenu?: boolean;
 }) {
   const NAV = canManageMenu
-    ? [...BASE_NAV, { label: "Menu", href: "/admin/menu", icon: BookOpen, exact: false }]
+    ? [...BASE_NAV, { label: "Menu", href: "/employee/menu", icon: BookOpen, exact: false }]
     : BASE_NAV;
   const pathname = usePathname();
   const [pending, startTransition] = useTransition();
