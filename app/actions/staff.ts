@@ -106,11 +106,29 @@ export async function resetStaffPin(
   if (!PIN_REGEX.test(newPin)) return { error: "PIN must be exactly 4 digits (numbers only)." };
 
   const admin = createAdminClient();
-  const { error } = await admin.auth.admin.updateUserById(authUserId, {
-    password: newPin,
-  });
+  const syntheticEmail = `emp-${staffId}@restrosewa.internal`;
 
-  if (error) return { error: "Failed to update PIN." };
+  // createUser accepts 4-digit PINs; updateUserById enforces a 6-char minimum — so recreate
+  const { data: newAuthUser, error: createErr } = await admin.auth.admin.createUser({
+    email: syntheticEmail,
+    password: newPin,
+    email_confirm: true,
+  });
+  if (createErr) return { error: `Failed to update PIN: ${createErr.message}` };
+
+  const service = createServiceClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: updateErr } = await (service as any)
+    .from("restaurant_users")
+    .update({ auth_user_id: newAuthUser.user.id })
+    .eq("id", staffId);
+
+  if (updateErr) {
+    await admin.auth.admin.deleteUser(newAuthUser.user.id);
+    return { error: "Failed to update staff record." };
+  }
+
+  await admin.auth.admin.deleteUser(authUserId);
   return null;
 }
 
@@ -244,10 +262,22 @@ export async function updateStaffMember(
 
   if (newPin && authUserId) {
     const admin = createAdminClient();
-    const { error: pinErr } = await admin.auth.admin.updateUserById(authUserId, {
+    const syntheticEmail = `emp-${staffId}@restrosewa.internal`;
+
+    const { data: newAuthUser, error: createErr } = await admin.auth.admin.createUser({
+      email: syntheticEmail,
       password: newPin,
+      email_confirm: true,
     });
-    if (pinErr) return { error: `Staff details saved but PIN update failed: ${pinErr.message}` };
+    if (createErr) return { error: `Staff details saved but PIN update failed: ${createErr.message}` };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (service as any)
+      .from("restaurant_users")
+      .update({ auth_user_id: newAuthUser.user.id })
+      .eq("id", staffId);
+
+    await admin.auth.admin.deleteUser(authUserId);
   }
 
   revalidatePath(`/superadmin/restaurants/${restaurantId}`);

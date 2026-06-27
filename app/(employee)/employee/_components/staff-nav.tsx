@@ -4,13 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTransition } from "react";
 import { logout } from "@/app/actions/auth";
-import { Bell, BookOpen, LayoutGrid, ListOrdered, LogOut } from "lucide-react";
-
-const BASE_NAV = [
-  { label: "Tables",        href: "/employee/dashboard",     icon: LayoutGrid,  exact: true  },
-  { label: "Queue",         href: "/employee/queue",         icon: ListOrdered, exact: false },
-  { label: "Notifications", href: "/employee/notifications", icon: Bell,        exact: false },
-];
+import { Banknote, Bell, BookOpen, LayoutGrid, ListOrdered, LogOut } from "lucide-react";
 
 export function StaffNav({
   restaurantName,
@@ -23,9 +17,13 @@ export function StaffNav({
   notificationCount?: number;
   canManageMenu?: boolean;
 }) {
-  const NAV = canManageMenu
-    ? [...BASE_NAV, { label: "Menu", href: "/employee/menu", icon: BookOpen, exact: false }]
-    : BASE_NAV;
+  const NAV = [
+    { label: "Tables",        href: "/employee/dashboard",     icon: LayoutGrid,  exact: true  },
+    { label: "Orders",        href: "/employee/queue",         icon: ListOrdered, exact: false },
+    ...(canManageMenu ? [{ label: "Menu", href: "/employee/menu", icon: BookOpen, exact: false }] : []),
+    { label: "Sales",         href: "/employee/sales",         icon: Banknote,    exact: false },
+    { label: "Notifications", href: "/employee/notifications", icon: Bell,        exact: false },
+  ];
   const pathname = usePathname();
   const [pending, startTransition] = useTransition();
 

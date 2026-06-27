@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect, useCallback, useMemo } from "react";
+import { useState, useTransition, useEffect, useCallback, useMemo, useRef } from "react";
 import type { CategoryRow, MenuItemRow } from "@/app/actions/menu";
 import {
   sendNotification,
@@ -22,13 +22,17 @@ const FOOD_TYPE_CONFIG = {
 
 function PinEntry({
   sessionId,
+  tableId,
+  roomId,
   cacheKey,
   onSuccess,
   onClose,
 }: {
-  sessionId: string;
+  sessionId: string | null;
+  tableId: string | null;
+  roomId: string | null;
   cacheKey: string;
-  onSuccess: () => void;
+  onSuccess: (resolvedSessionId: string) => void;
   onClose: () => void;
 }) {
   const [digits, setDigits] = useState<string[]>([]);
@@ -43,14 +47,14 @@ function PinEntry({
       setDigits(next);
       if (next.length === 4) {
         setVerifying(true);
-        const result = await verifyCustomerPin(sessionId, next.join(""));
-        if (result.success) {
+        const result = await verifyCustomerPin(sessionId, next.join(""), tableId, roomId);
+        if (result.success && result.resolvedSessionId) {
           try {
-            localStorage.setItem(`rs_auth_${cacheKey}`, JSON.stringify({ sessionId }));
+            localStorage.setItem(`rs_auth_${cacheKey}`, JSON.stringify({ sessionId: result.resolvedSessionId }));
           } catch {
             // storage unavailable — ordering still works for this session
           }
-          onSuccess();
+          onSuccess(result.resolvedSessionId);
         } else {
           setDigits([]);
           setError("Incorrect PIN. Please try again.");
@@ -58,7 +62,7 @@ function PinEntry({
         }
       }
     },
-    [digits, verifying, sessionId, cacheKey, onSuccess]
+    [digits, verifying, sessionId, tableId, roomId, cacheKey, onSuccess]
   );
 
   const backspace = useCallback(() => {
@@ -176,16 +180,29 @@ function NotifyBar({
   tableId,
   roomId,
   isRoom,
+  sessionId,
   initialNotifState,
 }: {
   restaurantId: string;
   tableId: string | null;
   roomId: string | null;
   isRoom: boolean;
+  sessionId: string | null;
   initialNotifState: CustomerNotifState;
 }) {
   const [notifState, setNotifState] = useState<CustomerNotifState>(initialNotifState);
   const [, start] = useTransition();
+  const prevSessionRef = useRef<string | null>(sessionId);
+
+  // When the active session changes (stale-QR scenario: PIN resolves to a newer session
+  // than the one fetched at page load), reset to clean state so the new session's
+  // notifications start fresh and independent of the previous session.
+  useEffect(() => {
+    if (sessionId && sessionId !== prevSessionRef.current) {
+      setNotifState({ call_waiter: null, request_bill: null });
+    }
+    prevSessionRef.current = sessionId;
+  }, [sessionId]);
 
   if (!tableId && !roomId) return null;
 
@@ -433,7 +450,7 @@ export function CustomerMenu({
   tableNumber,
   roomId,
   roomNumber,
-  sessionId,
+  sessionId: initialSessionId,
   orderingEnabled,
   qrMode,
   categories,
@@ -461,8 +478,12 @@ export function CustomerMenu({
     ? `Room ${roomNumber}`
     : null;
 
+  // Track the active session ID in state — it may resolve to a different session than
+  // the one fetched at page-load time (e.g. if the waiter closed and re-opened the session)
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(initialSessionId);
+
   const orderingAvailable =
-    orderingEnabled && qrMode === "ordering_enabled" && !!sessionId && !!contextId;
+    orderingEnabled && qrMode === "ordering_enabled" && !!contextId;
 
   const [activeCategoryId, setActiveCategoryId] = useState<string>(
     categories[0]?.id ?? ""
@@ -482,22 +503,27 @@ export function CustomerMenu({
     [categories]
   );
 
-  // Restore PIN auth from localStorage on mount
+  // Restore PIN auth from localStorage on mount — use the session ID stored at verification time
   useEffect(() => {
-    if (!contextId || !sessionId) return;
+    if (!contextId) return;
     try {
       const stored = localStorage.getItem(`rs_auth_${cacheKey}`);
       if (!stored) return;
       const parsed = JSON.parse(stored) as { sessionId?: string };
-      if (parsed.sessionId !== sessionId) return;
-      checkSessionActive(sessionId).then((r) => {
-        if (r.active) setPinVerified(true);
-        else localStorage.removeItem(`rs_auth_${cacheKey}`);
+      if (!parsed.sessionId) return;
+      checkSessionActive(parsed.sessionId).then((r) => {
+        if (r.active) {
+          setActiveSessionId(parsed.sessionId!);
+          setPinVerified(true);
+        } else {
+          localStorage.removeItem(`rs_auth_${cacheKey}`);
+        }
       });
     } catch {
       // ignore
     }
-  }, [contextId, sessionId, cacheKey]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleAdd = useCallback(
     (item: MenuItemRow) => {
@@ -526,7 +552,8 @@ export function CustomerMenu({
     });
   }, []);
 
-  const handlePinSuccess = useCallback(() => {
+  const handlePinSuccess = useCallback((resolvedSessionId: string) => {
+    setActiveSessionId(resolvedSessionId);
     setPinVerified(true);
     setShowPinEntry(false);
     if (pendingAddItemId) {
@@ -547,7 +574,7 @@ export function CustomerMenu({
   const cartCount = cartEntries.reduce((sum, [, qty]) => sum + qty, 0);
 
   async function placeOrder() {
-    if (!sessionId || cartCount === 0) return;
+    if (!activeSessionId || cartCount === 0) return;
     setPlacing(true);
     const orderItems: CustomerCartItem[] = cartEntries.flatMap(([id, qty]) => {
       const item = items.find((i) => i.id === id);
@@ -561,7 +588,7 @@ export function CustomerMenu({
         quantity: qty,
       }];
     });
-    const result = await submitCustomerOrder(sessionId, restaurantId, orderItems);
+    const result = await submitCustomerOrder(activeSessionId, restaurantId, orderItems);
     if (result.error) {
       alert(result.error);
     } else {
@@ -586,9 +613,11 @@ export function CustomerMenu({
       style={{ background: "var(--color-canvas)", paddingBottom: bottomPad }}
     >
       {/* PIN entry overlay */}
-      {showPinEntry && orderingAvailable && sessionId && contextId && (
+      {showPinEntry && orderingAvailable && contextId && (
         <PinEntry
-          sessionId={sessionId}
+          sessionId={activeSessionId}
+          tableId={tableId}
+          roomId={roomId}
           cacheKey={cacheKey}
           onSuccess={handlePinSuccess}
           onClose={() => {
@@ -720,6 +749,7 @@ export function CustomerMenu({
         tableId={tableId}
         roomId={roomId}
         isRoom={isRoom}
+        sessionId={activeSessionId}
         initialNotifState={initialNotifState}
       />
     </div>

@@ -13,19 +13,47 @@ export type CustomerCartItem = {
 };
 
 export async function verifyCustomerPin(
-  sessionId: string,
-  pin: string
-): Promise<{ success: boolean }> {
+  sessionId: string | null,
+  pin: string,
+  tableId?: string | null,
+  roomId?: string | null
+): Promise<{ success: boolean; resolvedSessionId: string | null }> {
   const service = createServiceClient();
+
+  // Try exact session lookup first
+  if (sessionId) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: session } = await (service as any)
+      .from("sessions")
+      .select("id, customer_pin")
+      .eq("id", sessionId)
+      .eq("status", "active")
+      .maybeSingle();
+
+    if (session) {
+      const success = session.customer_pin === pin;
+      return { success, resolvedSessionId: success ? (session.id as string) : null };
+    }
+  }
+
+  // Session not found (stale page) — look up the current active session for this table/room
+  if (!tableId && !roomId) return { success: false, resolvedSessionId: null };
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: session } = await (service as any)
+  let q = (service as any)
     .from("sessions")
-    .select("customer_pin")
-    .eq("id", sessionId)
+    .select("id, customer_pin")
     .eq("status", "active")
-    .maybeSingle();
-  if (!session) return { success: false };
-  return { success: session.customer_pin === pin };
+    .not("customer_pin", "is", null);
+
+  if (tableId) q = q.eq("table_id", tableId);
+  else q = q.eq("room_id", roomId);
+
+  const { data: fresh } = await q.maybeSingle();
+  if (!fresh) return { success: false, resolvedSessionId: null };
+
+  const success = fresh.customer_pin === pin;
+  return { success, resolvedSessionId: success ? (fresh.id as string) : null };
 }
 
 export async function checkSessionActive(
@@ -101,22 +129,24 @@ export type CustomerNotifState = {
 export async function getCustomerNotifState(
   restaurantId: string,
   tableId: string | null,
-  roomId?: string | null
+  roomId?: string | null,
+  sessionId?: string | null
 ): Promise<CustomerNotifState> {
   if (!tableId && !roomId) return { call_waiter: null, request_bill: null };
+  // Without a session we have no scope to filter by — return clean state so
+  // buttons are enabled and the server-side dedup handles actual conflicts.
+  if (!sessionId) return { call_waiter: null, request_bill: null };
+
   const service = createServiceClient();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let query = (service as any)
+  const { data } = await (service as any)
     .from("notifications")
     .select("type, status")
     .eq("restaurant_id", restaurantId)
+    .eq("session_id", sessionId)
     .in("type", ["call_waiter", "request_bill"])
     .in("status", ["new", "acknowledged"]);
 
-  if (tableId) query = query.eq("table_id", tableId);
-  else if (roomId) query = query.eq("room_id", roomId);
-
-  const { data } = await query;
   const rows = (data ?? []) as { type: string; status: string }[];
   const find = (t: string) =>
     (rows.find((r) => r.type === t)?.status as NotificationStatus) ?? null;
@@ -135,22 +165,8 @@ export async function sendNotification(
   const contextId = tableId ?? roomId ?? null;
   if (!contextId) return { error: "No table or room context." };
 
-  // Prevent duplicate active notifications of the same type
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let dupQuery = (service as any)
-    .from("notifications")
-    .select("id")
-    .eq("restaurant_id", restaurantId)
-    .eq("type", type)
-    .in("status", ["new", "acknowledged"]);
-  if (tableId) dupQuery = dupQuery.eq("table_id", tableId);
-  else if (roomId) dupQuery = dupQuery.eq("room_id", roomId);
-
-  const { data: existing } = await dupQuery.maybeSingle();
-  if (existing) return { alreadyPending: true };
-
-  // Find active session for this table/room (if any)
-  let sessionId: string | null = null;
+  // Resolve the active session first — dedup is scoped to the session so that
+  // stale notifications from previous dining sessions don't block new guests.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let sessionQuery = (service as any)
     .from("sessions")
@@ -161,7 +177,27 @@ export async function sendNotification(
   else if (roomId) sessionQuery = sessionQuery.eq("room_id", roomId);
 
   const { data: session } = await sessionQuery.maybeSingle();
-  sessionId = session?.id ?? null;
+  const sessionId: string | null = session?.id ?? null;
+
+  // Prevent duplicate active notifications within the same session.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let dupQuery = (service as any)
+    .from("notifications")
+    .select("id")
+    .eq("restaurant_id", restaurantId)
+    .eq("type", type)
+    .in("status", ["new", "acknowledged"]);
+
+  if (sessionId) {
+    dupQuery = dupQuery.eq("session_id", sessionId);
+  } else {
+    // No active session — fall back to table/room scope to prevent spam.
+    if (tableId) dupQuery = dupQuery.eq("table_id", tableId);
+    else if (roomId) dupQuery = dupQuery.eq("room_id", roomId);
+  }
+
+  const { data: existing } = await dupQuery.maybeSingle();
+  if (existing) return { alreadyPending: true };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (service as any).from("notifications").insert({

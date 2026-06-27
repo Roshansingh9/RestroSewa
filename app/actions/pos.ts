@@ -623,3 +623,118 @@ export async function getWorkstationQueue(
       };
     });
 }
+
+// ─── My Orders (filtered by assigned workstations) ────────────────────────────
+
+export async function getMyOrders(
+  restaurantUserId: string,
+  restaurantId: string
+): Promise<QueueItem[]> {
+  const service = createServiceClient();
+
+  // Find which workstations this employee is assigned to
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: assignments } = await (service as any)
+    .from("restaurant_user_workstations")
+    .select("workstation_id")
+    .eq("restaurant_user_id", restaurantUserId);
+
+  const assignedIds: string[] = (assignments ?? []).map(
+    (a: { workstation_id: string }) => a.workstation_id
+  );
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let query = (service as any)
+    .from("session_order_items")
+    .select("id, item_name, item_price, workstation_name, quantity, item_status, notes, created_at, order_id, workstation_id")
+    .eq("restaurant_id", restaurantId)
+    .in("item_status", ["pending", "ready"])
+    .order("created_at");
+
+  if (assignedIds.length > 0) {
+    query = query.in("workstation_id", assignedIds);
+  }
+
+  const { data: items } = await query;
+  if (!items?.length) return [];
+
+  const orderIds = [...new Set((items as (OrderItemRow & { workstation_id: string })[]).map((i) => i.order_id))];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: orders } = await (service as any)
+    .from("session_orders")
+    .select("id, session_id")
+    .in("id", orderIds);
+
+  const sessionIds = [...new Set(((orders ?? []) as { id: string; session_id: string }[]).map((o) => o.session_id))];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: sessions } = await (service as any)
+    .from("sessions")
+    .select("id, type, table_id, room_id, restaurant_tables ( number ), rooms ( number )")
+    .in("id", sessionIds)
+    .eq("status", "active");
+
+  const orderMap = new Map(((orders ?? []) as { id: string; session_id: string }[]).map((o) => [o.id, o.session_id]));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sessionMap = new Map(((sessions ?? []) as any[]).map((s) => [s.id, s]));
+
+  return (items as OrderItemRow[])
+    .filter((item) => {
+      const sid = orderMap.get(item.order_id);
+      return sid && sessionMap.has(sid);
+    })
+    .map((item) => {
+      const sid = orderMap.get(item.order_id)!;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const session = sessionMap.get(sid) as any;
+      return {
+        ...item,
+        table_number: session?.restaurant_tables?.number ?? null,
+        room_number: session?.rooms?.number ?? null,
+        session_type: session?.type ?? null,
+      };
+    });
+}
+
+// ─── Recent Sales ─────────────────────────────────────────────────────────────
+
+export type PaymentRow = {
+  id: string;
+  total_amount: number;
+  payment_method: string;
+  cash_amount: number;
+  online_amount: number;
+  created_at: string;
+  table_number: string | null;
+  room_number: string | null;
+  session_type: string | null;
+};
+
+export async function getRecentSales(
+  restaurantId: string,
+  limit = 50
+): Promise<PaymentRow[]> {
+  const service = createServiceClient();
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data } = await (service as any)
+    .from("payments")
+    .select("id, total_amount, payment_method, cash_amount, online_amount, created_at, sessions ( type, restaurant_tables ( number ), rooms ( number ) )")
+    .eq("restaurant_id", restaurantId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (!data) return [];
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data as any[]).map((p) => ({
+    id: p.id,
+    total_amount: p.total_amount,
+    payment_method: p.payment_method,
+    cash_amount: p.cash_amount,
+    online_amount: p.online_amount,
+    created_at: p.created_at,
+    table_number: p.sessions?.restaurant_tables?.number ?? null,
+    room_number: p.sessions?.rooms?.number ?? null,
+    session_type: p.sessions?.type ?? null,
+  }));
+}

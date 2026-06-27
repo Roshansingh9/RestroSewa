@@ -1,5 +1,5 @@
 import { requireRestaurantStaff } from "@/lib/auth/guards";
-import { getWorkstationQueue, updateOrderItemStatus } from "@/app/actions/pos";
+import { getMyOrders, updateOrderItemStatus } from "@/app/actions/pos";
 import type { QueueItem } from "@/app/actions/pos";
 
 function QueueCard({ item }: { item: QueueItem }) {
@@ -89,9 +89,9 @@ function QueueCard({ item }: { item: QueueItem }) {
   );
 }
 
-export default async function QueuePage() {
+export default async function OrdersPage() {
   const { restaurantUser } = await requireRestaurantStaff();
-  const items = await getWorkstationQueue(restaurantUser.restaurant_id);
+  const items = await getMyOrders(restaurantUser.id, restaurantUser.restaurant_id);
 
   const pending = items.filter((i) => i.item_status === "pending");
   const ready = items.filter((i) => i.item_status === "ready");
@@ -102,7 +102,7 @@ export default async function QueuePage() {
         className="text-xl mb-1"
         style={{ color: "var(--color-ink)", fontWeight: 300, letterSpacing: "-0.4px" }}
       >
-        Queue
+        Orders
       </h1>
       <p className="text-sm mb-6" style={{ color: "var(--color-ink-mute)" }}>
         {items.length === 0 ? "All clear." : `${pending.length} pending · ${ready.length} ready`}

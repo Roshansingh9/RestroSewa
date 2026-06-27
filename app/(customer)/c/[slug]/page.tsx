@@ -115,7 +115,7 @@ export default async function CustomerMenuPage({
 
   const [categories, initialNotifState] = await Promise.all([
     getMenuCategories(restaurant.id),
-    getCustomerNotifState(restaurant.id, tableId, roomId),
+    getCustomerNotifState(restaurant.id, tableId, roomId, sessionId),
   ]);
 
   const activeCategories = categories.filter((c) => c.is_active);
